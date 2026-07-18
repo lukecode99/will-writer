@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Will Writer",
+    "slug": "will-writer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#1B3A6B"
+    },
+    "web": {
+      "backgroundColor": "#1B3A6B",
+      "themeColor": "#1B3A6B",
+      "favicon": "./assets/favicon.png"
+    },
+    "platforms": ["web"]
+  }
+}

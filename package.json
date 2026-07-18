@@ -1,0 +1,25 @@
+{
+  "name": "will-writer",
+  "version": "1.0.0",
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "web": "expo start --web",
+    "export:web": "npx expo export --platform web --public-url https://lukecode99.github.io/will-writer"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~4.0.1",
+    "expo": "~52.0.0",
+    "expo-status-bar": "~2.0.0",
+    "pdf-lib": "^1.17.1",
+    "react": "18.3.1",
+    "react-dom": "^18.2.0",
+    "react-native": "0.76.7",
+    "react-native-web": "~0.19.6"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "@types/react": "~18.3.12",
+    "typescript": "~5.3.3"
+  }
+}

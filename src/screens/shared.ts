@@ -1,0 +1,153 @@
+import { StyleSheet } from 'react-native';
+
+export const C = {
+  primary: '#1B3A6B',
+  background: '#F7F9FC',
+  surface: '#FFFFFF',
+  text: '#1A1A2E',
+  textLight: '#6B7280',
+  border: '#D1DCE8',
+  danger: '#DC2626',
+  success: '#059669',
+};
+
+export const shared = StyleSheet.create({
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 48,
+    backgroundColor: C.background,
+    flexGrow: 1,
+  },
+  heading: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: C.text,
+    marginBottom: 4,
+    marginTop: 4,
+  },
+  sub: {
+    fontSize: 14,
+    color: C.textLight,
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.text,
+    marginBottom: 6,
+    marginTop: 14,
+  },
+  input: {
+    backgroundColor: C.surface,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: C.text,
+    marginBottom: 2,
+  },
+  inputMulti: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  inputError: {
+    borderColor: C.danger,
+  },
+  error: {
+    color: C.danger,
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  primaryBtn: {
+    backgroundColor: C.primary,
+    borderRadius: 12,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  primaryBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  secondaryBtn: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 8,
+    borderWidth: 1.5,
+    borderColor: C.primary,
+  },
+  secondaryBtnText: {
+    color: C.primary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  dangerBtn: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  dangerBtnText: {
+    color: C.danger,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  addBtn: {
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: C.primary,
+    borderStyle: 'dashed',
+    marginTop: 8,
+  },
+  addBtnText: {
+    color: C.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  card: {
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.text,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: C.text,
+    marginTop: 20,
+    marginBottom: 2,
+  },
+  hint: {
+    fontSize: 12,
+    color: C.textLight,
+    marginBottom: 10,
+    lineHeight: 18,
+  },
+  optionalTag: {
+    fontSize: 12,
+    color: C.textLight,
+    fontStyle: 'italic',
+    marginLeft: 4,
+  },
+});
