@@ -26,7 +26,7 @@ jobs:
         working-directory: .
 
       - name: Export web build
-        run: npx expo export --platform web --public-url https://lukecode99.github.io/will-writer
+        run: npx expo export --platform web
         env:
           NODE_ENV: production
 

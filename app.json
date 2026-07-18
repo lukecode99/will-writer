@@ -13,6 +13,9 @@
       "themeColor": "#1B3A6B",
       "favicon": "./assets/favicon.png"
     },
-    "platforms": ["web"]
+    "platforms": ["web"],
+    "experiments": {
+      "baseUrl": "/will-writer"
+    }
   }
 }
