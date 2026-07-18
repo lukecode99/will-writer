@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { WillData } from '../types';
 import { C, shared } from './shared';
-import { generateWillPdf } from '../pdfGen';
 
 interface Props {
   data: WillData;
@@ -51,6 +50,7 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
   async function handleGenerate() {
     setGenerating(true);
     try {
+      const { generateWillPdf } = await import('../pdfGen');
       const bytes = await generateWillPdf(data);
       const blob = new Blob([bytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
