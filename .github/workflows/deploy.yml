@@ -22,8 +22,7 @@ jobs:
         run: npm install -g pnpm@9
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: .
+        run: pnpm install --no-frozen-lockfile
 
       - name: Export web build
         run: npx expo export --platform web
