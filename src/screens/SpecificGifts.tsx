@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
 import { WillData, SpecificGift, GiftSubstitutionType, GiftTaxBurden } from '../types';
+import { blockingProblems } from '../validation';
+import { notify } from '../platform';
 import { C, shared } from './shared';
 
 interface Props {
@@ -60,6 +62,20 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
     onChange({ specificGifts: data.specificGifts.filter(g => g.id !== id) });
   }
 
+  /**
+   * Skipping this step entirely is fine. A half-filled gift is not: "I give
+   * to " with nothing after it is a clause that a court has to construe, and the
+   * usual answer is that it fails and the item drops into the residue silently.
+   */
+  function handleNext() {
+    const problems = blockingProblems(data).filter(p => p.step === 'gifts');
+    if (problems.length > 0) {
+      notify(problems.map(p => `• ${p.message}`).join('\n'), 'Not finished yet');
+      return;
+    }
+    onNext();
+  }
+
   return (
     <ScrollView contentContainerStyle={shared.scrollContent}>
       <Text style={shared.heading}>Specific Gifts</Text>
@@ -82,20 +98,26 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
 
           <Text style={shared.label}>What are you giving?</Text>
           <TextInput
-            style={shared.input}
+            style={[shared.input, !gift.description.trim() ? styles.inputError : null]}
             placeholder="e.g. £5,000 in cash / my vintage watch"
             value={gift.description}
             onChangeText={v => updateGift(gift.id, { description: v })}
           />
+          {!gift.description.trim() ? (
+            <Text style={styles.errorText}>Say what the gift is, or remove this gift.</Text>
+          ) : null}
 
           <Text style={shared.label}>Recipient</Text>
           <TextInput
-            style={shared.input}
+            style={[shared.input, !gift.recipient.trim() ? styles.inputError : null]}
             placeholder="Full name, or charity name"
             value={gift.recipient}
             onChangeText={v => updateGift(gift.id, { recipient: v })}
             autoCapitalize="words"
           />
+          {!gift.recipient.trim() ? (
+            <Text style={styles.errorText}>Say who receives it, or remove this gift.</Text>
+          ) : null}
 
           <View style={styles.switchRow}>
             <Switch
@@ -175,12 +197,17 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
             <>
               <Text style={shared.label}>Alternative recipient</Text>
               <TextInput
-                style={shared.input}
+                style={[shared.input, !gift.substitutionRecipient.trim() ? styles.inputError : null]}
                 placeholder="Full name or charity name"
                 value={gift.substitutionRecipient}
                 onChangeText={v => updateGift(gift.id, { substitutionRecipient: v })}
                 autoCapitalize="words"
               />
+              {!gift.substitutionRecipient.trim() ? (
+                <Text style={styles.errorText}>
+                  Name the alternative recipient, or choose "falls into the residuary estate" above.
+                </Text>
+              ) : null}
             </>
           )}
         </View>
@@ -190,7 +217,7 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
         <Text style={shared.addBtnText}>+ Add a specific gift</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={shared.primaryBtn} onPress={onNext}>
+      <TouchableOpacity style={shared.primaryBtn} onPress={handleNext}>
         <Text style={shared.primaryBtnText}>
           {data.specificGifts.length === 0 ? 'Skip (no specific gifts)' : 'Continue'}
         </Text>
@@ -203,6 +230,14 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
 }
 
 const styles = StyleSheet.create({
+  inputError: {
+    borderColor: C.danger,
+  },
+  errorText: {
+    color: C.danger,
+    fontSize: 12.5,
+    marginTop: 4,
+  },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',

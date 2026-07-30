@@ -1,0 +1,422 @@
+/* eslint-disable */
+/**
+ * What each scenario must produce.
+ *
+ * Round 1 of the audit rendered every scenario and left the judgement to me
+ * reading the output. That found 19 real problems, but it does not survive
+ * contact with a change made in three months' time. These are the same
+ * judgements written down as assertions, so `node audit/run.mjs` either exits 0
+ * or names what regressed.
+ *
+ * Needles are matched against the document text in layout order. Long
+ * paragraphs are wrapped before they are drawn, so a needle that spans a line
+ * break will never match — assertions are therefore kept to short phrases, and
+ * where a phrase could straddle a wrap they are reduced to a single word (a
+ * word is never split).
+ *
+ * Every entry additionally gets the common invariants in `commonChecks` below.
+ */
+
+const PAGE_BOTTOM = 40;
+
+/**
+ * Invariants that hold for every document the app can produce, valid or draft.
+ * These are the failures that would otherwise only show up as "the last line is
+ * missing" in a PDF nobody opened.
+ */
+function commonChecks({ shown, strict, draft }) {
+  const out = [];
+  const rendered = strict.status === 'ok' ? strict : draft;
+
+  // The draft preview has to render whatever it is given. It is the only way a
+  // user with an incomplete will can see what is wrong, so it must never throw.
+  if (draft.status === 'THREW') {
+    out.push(`draft render crashed: ${draft.error && draft.error.message}`);
+  }
+
+  // Nothing may be drawn off the bottom of the page. `ensureSpace` is supposed
+  // to page-break before that happens; this is the check that it did.
+  for (const r of rendered.records) {
+    if (typeof r.y === 'number' && r.y < PAGE_BOTTOM) {
+      out.push(`text drawn below the page at y=${r.y.toFixed(1)}: ${JSON.stringify(r.text.slice(0, 60))}`);
+      break;
+    }
+  }
+
+  // Every page numbered, and the totals agreeing — a will with a page missing
+  // should be obvious to whoever reads it.
+  const total = rendered.pages;
+  for (let i = 1; i <= total; i++) {
+    if (!shown.includes(`Page ${i} of ${total}`)) {
+      out.push(`page ${i} of ${total} has no footer`);
+    }
+  }
+
+  // Clause numbers must run 1, 2, 3 … with no gaps and no repeats. Optional
+  // clauses used to be numbered by arithmetic over which sections happened to be
+  // present, which is exactly how a will gets a clause 3 followed by a clause 5.
+  const numbers = [];
+  for (const line of shown.split('\n')) {
+    const m = /^(\d+)\. [A-Z][A-Z ]/.exec(line.trim());
+    if (m) numbers.push(Number(m[1]));
+  }
+  const expected = numbers.map((_, i) => i + 1);
+  if (numbers.join(',') !== expected.join(',')) {
+    out.push(`clause numbering is ${numbers.join(',') || '(none)'} — expected ${expected.join(',') || '(none)'}`);
+  }
+
+  // Placeholders that mean a value never made it to the page.
+  for (const junk of ['undefined', 'NaN', '[object Object]']) {
+    if (shown.includes(junk)) out.push(`document contains ${JSON.stringify(junk)}`);
+  }
+
+  return out;
+}
+
+/** Never a bracketed gap marker in a document the app agreed to finalise. */
+function noMarkers({ shown, strict }) {
+  if (strict.status !== 'ok') return [];
+  const found = [...shown.matchAll(/\[[A-Z][A-Z '"—-]+\]/g)].map(m => m[0]);
+  return found.length ? [`finalised will still contains gap markers: ${[...new Set(found)].join(', ')}`] : [];
+}
+
+function advisoryMentions(...needles) {
+  return ({ advisories }) =>
+    needles
+      .filter(n => !advisories.some(a => a.message.includes(n)))
+      .map(n => `no warning mentions ${JSON.stringify(n)}`);
+}
+
+function advisoryDoesNotMention(...needles) {
+  return ({ advisories }) =>
+    needles
+      .filter(n => advisories.some(a => a.message.includes(n)))
+      .map(n => `unexpected warning mentioning ${JSON.stringify(n)}`);
+}
+
+function all(...checks) {
+  return (arg) => checks.flatMap(c => c(arg) || []);
+}
+
+const RAW = {
+  // ── The document that should just work ────────────────────────────────────
+  baseline: {
+    verdict: 'ok',
+    mustContain: [
+      'LAST WILL AND TESTAMENT',
+      'of John Andrew Smith',
+      '1. REVOCATION OF PRIOR WILLS',
+      'born on 14 March 1985',
+      '2. DECLARATION AS TO FAMILY',
+      'I am married to Jane Elizabeth Smith',
+      '3. APPOINTMENT OF EXECUTORS',
+      '4. SPECIFIC GIFTS',
+      '5. BURDEN OF INHERITANCE TAX',
+      '6. RESIDUARY ESTATE',
+      '7. POWERS OF MY EXECUTORS AND TRUSTEES',
+      '8. FUNERAL WISHES',
+      'SURVIVORSHIP AND SUBSTITUTION',
+      'ATTESTATION',
+      'DATE OF SIGNING',
+      'SIGNING INSTRUCTIONS',
+      'WHAT CAN CHANGE OR OVERRIDE THIS WILL',
+      'THIS IS A TEMPLATE DOCUMENT — NOT LEGAL ADVICE',
+      '• Jane Elizabeth Smith (wife) — 50%',
+      '• Oliver Smith (son) — 30%',
+      '• Amelia Smith (daughter) — 20%',
+    ],
+    mustNotContain: [
+      'DRAFT — DO NOT SIGN',
+      'DRAFT — THIS DOCUMENT IS INCOMPLETE',
+      'APPOINTMENT OF GUARDIANS',
+      'TRUSTS FOR MINOR BENEFICIARIES',
+    ],
+    check: noMarkers,
+  },
+
+  // ── The four fatal findings, each pinned by the case that produced it ─────
+  'zero-residuary': {
+    verdict: 'REFUSED',
+    problemsMention: ['No one is named to receive your estate'],
+    mustContain: [
+      'DRAFT — DO NOT SIGN',
+      'DRAFT — THIS DOCUMENT IS INCOMPLETE AND MUST NOT BE SIGNED',
+      '[NO BENEFICIARIES NAMED — THIS WILL DISPOSES OF NOTHING]',
+      '[NO BENEFICIARIES NAMED]',
+      'DO NOT SIGN — this draft is incomplete.',
+    ],
+  },
+
+  'percentages-90': {
+    verdict: 'REFUSED',
+    problemsMention: ['add up to 90%', 'remaining 10%'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  'percentages-110': {
+    verdict: 'REFUSED',
+    problemsMention: ['add up to 110%', 'cannot come to more than 100%'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  'single-beneficiary-100': {
+    verdict: 'ok',
+    mustContain: ['• Jane Elizabeth Smith (wife) — 100%'],
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    // Both children are left out entirely — that is allowed, and is exactly the
+    // 1975 Act exposure the review said had to be surfaced rather than assumed.
+    check: all(noMarkers, advisoryMentions('not left anything in this will')),
+  },
+
+  // ── Guardians ─────────────────────────────────────────────────────────────
+  'minors-with-guardians': {
+    verdict: 'ok',
+    mustContain: [
+      '4. APPOINTMENT OF GUARDIANS',
+      'section 5(3) of the Children Act 1989',
+      'TRUSTS FOR MINOR BENEFICIARIES',
+      '(held on trust until age 18)',
+    ],
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryDoesNotMention('have not appointed a guardian')),
+  },
+
+  'minors-no-guardians': {
+    // Not a blocker: leaving guardians out is a lawful choice. It is a warning,
+    // and the app now says out loud what happens if you make it.
+    verdict: 'ok',
+    mustNotContain: ['APPOINTMENT OF GUARDIANS', 'DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('have not appointed a guardian')),
+  },
+
+  'adult-children-stale-guardians': {
+    // The appointment stays in the document — it is the user's express choice and
+    // deleting it silently would be worse than printing it. It is legally inert
+    // once every child is 18 (Children Act 1989 s.5 reaches minors only), so the
+    // right answer is to print it and warn.
+    verdict: 'ok',
+    mustContain: ['APPOINTMENT OF GUARDIANS'],
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('none of your children are under 18')),
+  },
+
+  // ── Specific gifts ────────────────────────────────────────────────────────
+  'gifts-only-no-residuary': {
+    // Gifts alone do not make a will: everything not specifically given falls
+    // into a residue that has nobody to take it, so it passes on intestacy while
+    // the revocation clause has already cancelled the previous will.
+    verdict: 'REFUSED',
+    problemsMention: ['No one is named to receive your estate'],
+    mustContain: ['[NO BENEFICIARIES NAMED — THIS WILL DISPOSES OF NOTHING]'],
+  },
+
+  'thirty-specific-gifts': {
+    verdict: 'ok',
+    mustContain: ['a) I give gift item number 1', 'z) I give gift item number 26', 'aa) I give', 'ad) I give'],
+    // `String.fromCharCode(97 + i)` lettered the 27th gift "{".
+    mustNotContain: ['{) I give', 'DRAFT — DO NOT SIGN'],
+    check: noMarkers,
+  },
+
+  'charity-named-sub-blank': {
+    verdict: 'REFUSED',
+    problemsMention: ['did not say who'],
+    mustContain: [
+      '[ALTERNATIVE RECIPIENT NAME MISSING]',
+      // A charity does not fail to survive by 30 days; it ceases to exist.
+      'amalgamated',
+      '(a registered charity)',
+    ],
+  },
+
+  'free-of-tax-and-charity': {
+    verdict: 'ok',
+    mustContain: [
+      '5. BURDEN OF INHERITANCE TAX',
+      '(a) Any gift expressed',
+      '(b) Any other gift',
+      '(c) If my residuary estate',
+      'amalgamated',
+    ],
+    // The single-paragraph variant is only correct when nothing is free of tax.
+    mustNotContain: ['Each specific gift made by this Will', 'DRAFT — DO NOT SIGN'],
+    check: noMarkers,
+  },
+
+  // ── Empty and malformed input ─────────────────────────────────────────────
+  'fully-empty': {
+    verdict: 'REFUSED',
+    problemsMention: [
+      'Your full name is missing',
+      'Your address is missing',
+      'No executor is named',
+      'No one is named to receive your estate',
+    ],
+    mustContain: [
+      'DRAFT — DO NOT SIGN',
+      '[FULL NAME MISSING]',
+      '[ADDRESS MISSING]',
+      '[PRIMARY EXECUTOR NAME MISSING]',
+      '[NO BENEFICIARIES NAMED — THIS WILL DISPOSES OF NOTHING]',
+    ],
+    // Nothing is known about the family, so the clause must be absent rather
+    // than printed with holes in it.
+    mustNotContain: ['DECLARATION AS TO FAMILY', 'SPECIFIC GIFTS', 'BURDEN OF INHERITANCE TAX'],
+  },
+
+  'unicode-names': {
+    // CJK and emoji cannot be printed at all by the standard PDF fonts. Dropping
+    // them would put a different name in the will than the one the user typed.
+    verdict: 'REFUSED',
+    problemsMention: ['We cannot print'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  'whitespace-address': {
+    verdict: 'ok',
+    mustContain: [
+      'Middlesex',
+      'I appoint Robert Hughes of',
+      'I also appoint Sarah Hughes',
+    ],
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: noMarkers,
+  },
+
+  'backstop-blank': {
+    verdict: 'ok',
+    mustContain: ['intestacy'],
+    mustNotContain: ['British Heart Foundation', 'DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('No backstop is set')),
+  },
+
+  'backstop-vague': {
+    verdict: 'ok',
+    mustContain: ['cousins'],
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: noMarkers,
+  },
+
+  // ── Round 2: one scenario per fix ─────────────────────────────────────────
+  'translit-name': {
+    verdict: 'ok',
+    mustContain: ['Michal Kowalski', 'Ingrida Berzina'],
+    // The first round deleted the character instead of transliterating it, which
+    // is how "Michał" became "Micha" — a different person.
+    mustNotContain: ['Micha Kowalski', 'Ingrda', 'DRAFT — DO NOT SIGN'],
+    check: noMarkers,
+  },
+
+  'untransliterable-name': {
+    verdict: 'REFUSED',
+    problemsMention: ['We cannot print', 'your name'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  'under-18': {
+    verdict: 'REFUSED',
+    problemsMention: ['Wills Act 1837, section 7'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  'future-dob': {
+    verdict: 'REFUSED',
+    problemsMention: ['date of birth is in the future'],
+  },
+
+  'impossible-dob': {
+    // 31/02/1985 used to roll silently to 2 March.
+    verdict: 'REFUSED',
+    problemsMention: ['not a real date'],
+    mustNotContain: ['born on 2 March 1985', 'born on 3 March 1985'],
+  },
+
+  'iso-dob-typed': {
+    verdict: 'REFUSED',
+    problemsMention: ['not a real date'],
+  },
+
+  'junk-percentages': {
+    verdict: 'REFUSED',
+    problemsMention: ['Check the share for'],
+    mustContain: ['[SHARE NOT SPECIFIED]'],
+    mustNotContain: ['50abc'],
+  },
+
+  'trailing-dot-percentage': {
+    verdict: 'REFUSED',
+    problemsMention: ['Check the share for'],
+    mustNotContain: ['50.%'],
+  },
+
+  'decimal-thirds': {
+    verdict: 'ok',
+    mustContain: ['33.33%', '33.34%'],
+    // Floating point: 33.33 + 33.33 + 33.34 does not come to exactly 100, and
+    // the share must not print its own rounding error either.
+    mustNotContain: ['33.3300', '33.339999', 'DRAFT — DO NOT SIGN'],
+    check: noMarkers,
+  },
+
+  'named-sub-blank': {
+    verdict: 'REFUSED',
+    problemsMention: ['did not say who'],
+    mustContain: ['[SUBSTITUTE NAME MISSING]'],
+  },
+
+  'unnamed-beneficiary': {
+    verdict: 'REFUSED',
+    problemsMention: ['has no name'],
+    mustContain: ['[BENEFICIARY NAME MISSING]'],
+  },
+
+  'no-executor': {
+    verdict: 'REFUSED',
+    problemsMention: ['No executor is named'],
+    mustContain: ['[PRIMARY EXECUTOR NAME MISSING]'],
+  },
+
+  'single-no-family': {
+    verdict: 'ok',
+    mustContain: [
+      '2. DECLARATION AS TO FAMILY',
+      'I am not married and I am not in a civil partnership.',
+    ],
+    // No children, so no children sentence at all.
+    mustNotContain: ['namely', 'DRAFT — DO NOT SIGN'],
+    check: noMarkers,
+  },
+
+  divorced: {
+    verdict: 'ok',
+    mustContain: [
+      'My marriage or civil partnership has been dissolved.',
+      'Divorce or dissolution changes it',
+      '18A',
+    ],
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryDoesNotMention('married or in a civil partnership')),
+  },
+
+  'long-text': {
+    verdict: 'ok',
+    mustContain: ['8. FUNERAL WISHES', 'Royal National Lifeboat Institution'],
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    // The point of this one is pagination: the common checks assert nothing is
+    // drawn off the bottom of a page and that every page is numbered.
+    check: all(noMarkers, ({ strict }) =>
+      strict.pages >= 5 ? [] : [`expected the long-text will to run past 4 pages, got ${strict.pages}`]),
+  },
+};
+
+// Attach the common invariants to every scenario.
+const EXPECTATIONS = {};
+for (const [name, spec] of Object.entries(RAW)) {
+  const own = spec.check;
+  EXPECTATIONS[name] = {
+    ...spec,
+    check: own ? all(commonChecks, own) : commonChecks,
+  };
+}
+
+module.exports = { EXPECTATIONS };

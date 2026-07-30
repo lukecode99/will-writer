@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   StatusBar,
@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  AppState,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WillData, EMPTY_WILL } from './src/types';
@@ -16,9 +17,13 @@ import {
   loadStep,
   saveStep,
   clearWillData,
+  flushWill,
 } from './src/storage';
+import { notify } from './src/platform';
+import { hasMinorChildren } from './src/family';
+import { StepKey } from './src/validation';
 import { C, CONTENT_MAX_WIDTH } from './src/screens/shared';
-import ProgressHeader from './src/components/ProgressHeader';
+import ProgressHeader, { SaveState } from './src/components/ProgressHeader';
 import AboutYou from './src/screens/AboutYou';
 import PartnerChildren from './src/screens/PartnerChildren';
 import Executors from './src/screens/Executors';
@@ -28,22 +33,27 @@ import ResiduaryEstate from './src/screens/ResiduaryEstate';
 import FuneralWishes from './src/screens/FuneralWishes';
 import Review from './src/screens/Review';
 
-// Steps: 0=About, 1=Partner/Children, 2=Executors, 3=Guardians*, 4=Gifts, 5=Residuary, 6=Funeral, 7=Review
-// *Guardians shown when there are/may be minor children
-
-function hasMinorChildren(data: WillData): boolean {
-  if (data.children.length === 0) return false;
-  const now = new Date();
-  return data.children.some(c => {
-    if (!c.dob) return true;
-    const parts = c.dob.split('/');
-    if (parts.length !== 3) return true;
-    const dob = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-    if (isNaN(dob.getTime())) return true;
-    const ageMs = now.getTime() - dob.getTime();
-    return ageMs / (1000 * 60 * 60 * 24 * 365.25) < 18;
-  });
-}
+/**
+ * The wizard's steps, by absolute index.
+ *
+ * Guardians is conditional, so there are two different numberings in play: the
+ * absolute one below, which decides what renders, and the visible one, which
+ * decides what the progress bar says. Review used to hand back a *visible*
+ * index, which `setStep` then treated as absolute — so with the guardians step
+ * hidden, "Edit specific gifts" opened the guardians screen and told a childless
+ * user about their minor children. Navigation is therefore by name; the mapping
+ * from name to index exists in exactly one place.
+ */
+const STEP: Record<StepKey, number> = {
+  about: 0,
+  family: 1,
+  executors: 2,
+  guardians: 3,
+  gifts: 4,
+  residuary: 5,
+  funeral: 6,
+  review: 7,
+};
 
 /**
  * The wizard itself. Split out from `App` so that its `useState` initialisers,
@@ -55,6 +65,9 @@ function Wizard() {
   const [data, setData] = useState<WillData>(() => loadWillData());
   const [step, setStep] = useState<number>(() => loadStep());
 
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const needsGuardians = hasMinorChildren(data);
 
   const update = useCallback((updates: Partial<WillData>) => {
@@ -63,6 +76,10 @@ function Wizard() {
       saveWillData(next);
       return next;
     });
+    // Answers are autosaved, so a "Saved ✓" left sitting on screen while the
+    // user carries on typing would be describing an older draft than the one in
+    // front of them. Drop back to the neutral label as soon as anything changes.
+    setSaveState(prev => (prev === 'saved' ? 'idle' : prev));
   }, []);
 
   // Persist step
@@ -70,32 +87,69 @@ function Wizard() {
     saveStep(step);
   }, [step]);
 
+  const save = useCallback(async () => {
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    setSaveState('saving');
+    try {
+      await flushWill();
+      setSaveState('saved');
+      resetTimer.current = setTimeout(() => setSaveState('idle'), 3000);
+    } catch (err) {
+      console.warn('Explicit save failed', err);
+      setSaveState('error');
+      notify(
+        'Your answers could not be saved to this device. Check you have free storage space, then try again.',
+        'Not saved',
+      );
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+  }, []);
+
+  // Autosave writes on every keystroke, but the last one before the app is
+  // backgrounded can still be in flight when iOS suspends the process. Flushing
+  // on the way out closes that window; failures are silent here because there is
+  // no screen left to show them on.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', next => {
+      if (next === 'background' || next === 'inactive') {
+        flushWill().catch(err => console.warn('Background flush failed', err));
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   function nextStep() {
     setStep(prev => {
       let next = prev + 1;
-      // Skip guardians (step 3) if no minor children
-      if (next === 3 && !needsGuardians) next = 4;
-      return next;
+      if (next === STEP.guardians && !needsGuardians) next = STEP.gifts;
+      return Math.min(STEP.review, next);
     });
   }
 
   function prevStep() {
     setStep(prev => {
       let back = prev - 1;
-      // Skip guardians (step 3) going back if no minor children
-      if (back === 3 && !needsGuardians) back = 2;
+      if (back === STEP.guardians && !needsGuardians) back = STEP.executors;
       return Math.max(0, back);
     });
   }
 
-  function goToStep(n: number) {
-    setStep(n);
+  // Review's edit links, and the links inside its problem list, address steps by
+  // name. Guardians stays reachable by name even when it is skipped in the
+  // forward flow, because a stale guardian left over from a corrected date of
+  // birth has to be editable to be removed.
+  function goToStep(key: StepKey) {
+    setStep(STEP[key]);
   }
 
   function restart() {
     clearWillData();
     setData({ ...EMPTY_WILL });
     setStep(0);
+    setSaveState('idle');
   }
 
   const STEP_TITLES = [
@@ -110,11 +164,11 @@ function Wizard() {
   ].filter(Boolean) as string[];
 
   const totalVisible = needsGuardians ? 8 : 7;
-  const visibleIndex = (!needsGuardians && step >= 4) ? step - 1 : step;
+  const visibleIndex = (!needsGuardians && step >= STEP.gifts) ? step - 1 : step;
 
   const stepTitle = STEP_TITLES[visibleIndex] || 'Review';
 
-  const isReview = step === 7;
+  const isReview = step === STEP.review;
 
   return (
     <View style={styles.root}>
@@ -122,6 +176,8 @@ function Wizard() {
         step={isReview ? totalVisible - 1 : visibleIndex}
         totalSteps={totalVisible}
         title={isReview ? 'Review' : stepTitle}
+        saveState={saveState}
+        onSave={save}
       />
 
       {/* Without this the keyboard covers the lower half of every form, and
@@ -134,34 +190,33 @@ function Wizard() {
             across 10 inches. Cap it and centre it; the gutters take the same
             background so it reads as a page, not a floating panel. */}
         <View style={[styles.column, { paddingBottom: insets.bottom }]}>
-          {step === 0 && (
+          {step === STEP.about && (
             <AboutYou data={data} onChange={update} onNext={nextStep} />
           )}
-          {step === 1 && (
+          {step === STEP.family && (
             <PartnerChildren data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
           )}
-          {step === 2 && (
+          {step === STEP.executors && (
             <Executors data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
           )}
-          {step === 3 && (
+          {step === STEP.guardians && (
             <Guardians data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
           )}
-          {step === 4 && (
+          {step === STEP.gifts && (
             <SpecificGifts data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
           )}
-          {step === 5 && (
+          {step === STEP.residuary && (
             <ResiduaryEstate data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
           )}
-          {step === 6 && (
+          {step === STEP.funeral && (
             <FuneralWishes data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
           )}
-          {step === 7 && (
+          {step === STEP.review && (
             <Review
               data={data}
               onEdit={goToStep}
               onBack={prevStep}
               onRestart={restart}
-              hasGuardianStep={needsGuardians}
             />
           )}
         </View>

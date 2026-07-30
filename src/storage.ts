@@ -106,6 +106,29 @@ export function clearWillData(): void {
   });
 }
 
+/**
+ * Writes the draft and waits for it to land, then reads it back to check it is
+ * really there.
+ *
+ * Everything else in this file is fire-and-forget: `persist` swallows failures
+ * because there is nothing useful to say to someone mid-keystroke. That is fine
+ * for autosave and useless as a promise to the user, so the Save button uses
+ * this instead -- it can fail out loud. The read-back matters because
+ * `setItem` resolving only means the native module accepted the write; on a
+ * device with no space left it can still resolve and store nothing.
+ */
+export async function flushWill(): Promise<void> {
+  const payload = JSON.stringify(cachedWill ?? EMPTY_WILL);
+  await AsyncStorage.multiSet([
+    [KEY, payload],
+    [STEP_KEY, String(cachedStep)],
+  ]);
+  const [[, back]] = await AsyncStorage.multiGet([KEY]);
+  if (back !== payload) {
+    throw new Error('The draft was written but could not be read back');
+  }
+}
+
 export function loadStep(): number {
   return cachedStep;
 }

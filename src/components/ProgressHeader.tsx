@@ -1,15 +1,26 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CONTENT_MAX_WIDTH } from '../screens/shared';
+
+export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 interface Props {
   step: number;       // 0-based current step index
   totalSteps: number;
   title?: string;
+  saveState: SaveState;
+  onSave: () => void;
 }
 
-export default function ProgressHeader({ step, totalSteps, title }: Props) {
+const SAVE_LABEL: Record<SaveState, string> = {
+  idle: 'Save',
+  saving: 'Saving',
+  saved: 'Saved ✓',
+  error: 'Not saved',
+};
+
+export default function ProgressHeader({ step, totalSteps, title, saveState, onSave }: Props) {
   const insets = useSafeAreaInsets();
   const current = step + 1;
   const pct = Math.round((current / totalSteps) * 100);
@@ -21,13 +32,31 @@ export default function ProgressHeader({ step, totalSteps, title }: Props) {
     <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.inner}>
         <View style={styles.row}>
-          <Text style={styles.appTitle}>Will Writer</Text>
-          {title ? (
-            <Text style={styles.stepLabel}>{title}</Text>
-          ) : (
-            <Text style={styles.stepLabel}>Step {current} of {totalSteps}</Text>
-          )}
+          {/* Title and step stack vertically rather than sitting side by side,
+              which leaves room for the save control on the right without it
+              crowding the step name on a narrow phone. */}
+          <View style={styles.titleBlock}>
+            <Text style={styles.appTitle}>Will Writer</Text>
+            <Text style={styles.stepLabel} numberOfLines={1}>
+              {title ? `${title} · step ${current} of ${totalSteps}` : `Step ${current} of ${totalSteps}`}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.saveBtn, saveState === 'error' ? styles.saveBtnError : null]}
+            onPress={onSave}
+            disabled={saveState === 'saving'}
+            accessibilityRole="button"
+            accessibilityLabel="Save your answers"
+          >
+            {saveState === 'saving' ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.saveText}>{SAVE_LABEL[saveState]}</Text>
+            )}
+          </TouchableOpacity>
         </View>
+
         <View style={styles.track}>
           <View style={[styles.fill, { width: `${pct}%` as any }]} />
         </View>
@@ -54,6 +83,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
+    gap: 12,
+  },
+  titleBlock: {
+    flex: 1,
   },
   appTitle: {
     color: '#FFFFFF',
@@ -63,7 +96,28 @@ const styles = StyleSheet.create({
   },
   stepLabel: {
     color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  saveBtn: {
+    minWidth: 74,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.55)',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveBtnError: {
+    borderColor: '#FCA5A5',
+    backgroundColor: 'rgba(220,38,38,0.35)',
+  },
+  saveText: {
+    color: '#FFFFFF',
     fontSize: 13,
+    fontWeight: '600',
   },
   track: {
     height: 6,

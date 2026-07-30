@@ -1,5 +1,8 @@
-import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, degrees, PDFFont, PDFPage } from 'pdf-lib';
 import { WillData, Beneficiary } from './types';
+import { sanitizeForPdf } from './text';
+import { formatDobLong, parseUkDate, ageInYears } from './family';
+import { blockingProblems, parsePercentage, formatPercentage, WillProblem } from './validation';
 
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
@@ -7,6 +10,7 @@ const MARGIN = 65;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 const BLACK = rgb(0, 0, 0);
 const GRAY = rgb(0.4, 0.4, 0.4);
+const RED = rgb(0.7, 0.1, 0.1);
 
 interface DrawCtx {
   doc: PDFDocument;
@@ -27,33 +31,6 @@ function ensureSpace(ctx: DrawCtx, needed: number): DrawCtx {
   return ctx;
 }
 
-// The standard PDF fonts are WinAnsi-encoded and pdf-lib throws on any character
-// outside that repertoire — including the newline you get by pressing Enter in a
-// multiline address or funeral-wishes box, and any emoji. One such character
-// anywhere in the will used to abort the entire PDF, so every string is
-// sanitised before it reaches the page.
-const CHAR_SUBSTITUTIONS: Array<[RegExp, string]> = [
-  [/\r\n?/g, '\n'],
-  [/\t/g, ' '],
-  [/[‘’‛]/g, "'"],
-  [/[“”‟]/g, '"'],
-  [/[‐‑]/g, '-'],
-  [/…/g, '...'],
-  [/ /g, ' '],
-];
-
-// WinAnsi covers Latin-1 plus a handful of typographic extras in 0x80-0x9F.
-const WINANSI_EXTRAS =
-  '€‚ƒ„†‡ˆ‰Š‹ŒŽ' +
-  '‘’“”•–—˜™š›œžŸ';
-const UNENCODABLE = new RegExp(`[^\\n -~\\u00A1-\\u00FF${WINANSI_EXTRAS}]`, 'g');
-
-export function sanitizeForPdf(text: unknown): string {
-  let out = String(text ?? '');
-  for (const [pattern, replacement] of CHAR_SUBSTITUTIONS) out = out.replace(pattern, replacement);
-  return out.replace(UNENCODABLE, '');
-}
-
 /**
  * An unfilled field must be visible in the document, never silently absent.
  *
@@ -61,6 +38,11 @@ export function sanitizeForPdf(text: unknown): string {
  * inheritance tax, absolutely." — which still reads as finished prose and is
  * easy to sign without noticing. Every user-supplied value that reaches the
  * page goes through here, so a blank shows up as an obvious bracketed marker.
+ *
+ * Markers should now only ever appear in a draft: `generateWillPdf` refuses to
+ * produce a final document while `blockingProblems` is non-empty. They stay
+ * because a marker is the correct thing to print if a gap ever gets past the
+ * gate, and because the draft preview relies on them.
  */
 function field(value: unknown, marker: string): string {
   const s = sanitizeForPdf(value).trim();
@@ -68,15 +50,17 @@ function field(value: unknown, marker: string): string {
 }
 
 /**
- * A share as it should read in the document: "40%" when entered, an explicit
- * marker when not. Never print a bare "%" or a value that isn't a number —
- * free text used to reach the page as "half%".
+ * A share as it should read in the document.
+ *
+ * This used to print the raw string rather than the parsed number, and relied on
+ * `parseFloat`, which reads a valid prefix and ignores the rest — so "50." went
+ * into the operative words as "50.%" and "50abc" as "50abc%". Parsing is now
+ * strict and shared with the on-screen validation, so what blocks the button and
+ * what reaches the page can never drift apart.
  */
 function pctLabel(raw: unknown): string {
-  const s = sanitizeForPdf(raw).trim();
-  const n = parseFloat(s);
-  if (s === '' || isNaN(n)) return '[SHARE NOT SPECIFIED]';
-  return `${s}%`;
+  const value = parsePercentage(sanitizeForPdf(raw));
+  return value === null ? '[SHARE NOT SPECIFIED]' : formatPercentage(value);
 }
 
 /**
@@ -231,7 +215,71 @@ function substitutionClause(b: Beneficiary): string {
   );
 }
 
-export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
+/**
+ * Thrown instead of producing a will that cannot do its job.
+ *
+ * A blank form used to generate a complete, signable four-page document whose
+ * revocation clause was fully operative: signing it cancelled any earlier will
+ * and disposed of nothing. That outcome is worse than the app not existing, so
+ * generation is now gated rather than merely discouraged.
+ */
+export class WillIncompleteError extends Error {
+  readonly problems: WillProblem[];
+  constructor(problems: WillProblem[]) {
+    super(`Cannot generate a will: ${problems.length} problem(s) must be fixed first.`);
+    this.name = 'WillIncompleteError';
+    this.problems = problems;
+  }
+}
+
+export interface GenerateOptions {
+  /**
+   * Render an incomplete will as a clearly-marked draft rather than refusing.
+   * Every page is watermarked and the attestation carries a do-not-sign notice.
+   */
+  draft?: boolean;
+}
+
+/** Family declaration lines. Empty when the user told us nothing about their family. */
+function familyLines(data: WillData): string[] {
+  const lines: string[] = [];
+  const partner = sanitizeForPdf(data.partnerName).trim();
+  const partnerAddress = inlineAddress(data.partnerAddress);
+  const partnerOf = partner && partnerAddress ? `${partner} of ${partnerAddress}` : partner;
+
+  if (data.maritalStatus === 'married') {
+    lines.push(partner ? `I am married to ${partnerOf}.` : 'I am married.');
+  } else if (data.maritalStatus === 'civilPartnership') {
+    lines.push(partner ? `I am in a civil partnership with ${partnerOf}.` : 'I am in a civil partnership.');
+  } else if (data.maritalStatus === 'single') {
+    lines.push('I am not married and I am not in a civil partnership.');
+  } else if (data.maritalStatus === 'divorced') {
+    lines.push('My marriage or civil partnership has been dissolved.');
+  } else if (data.maritalStatus === 'widowed') {
+    lines.push('I am a widow or widower and have not remarried or entered a new civil partnership.');
+  }
+
+  if (data.children.length > 0) {
+    const described = data.children.map(child => {
+      const name = field(child.name, 'child name missing');
+      const born = formatDobLong(child.dob);
+      return born ? `${name} (born ${born})` : name;
+    });
+    const count = data.children.length === 1 ? 'one child' : `${data.children.length} children`;
+    lines.push(`I have ${count} living at the date of this Will, namely ${described.join(', ')}.`);
+  }
+
+  return lines;
+}
+
+export async function generateWillPdf(
+  data: WillData,
+  options: GenerateOptions = {}
+): Promise<Uint8Array> {
+  const problems = blockingProblems(data);
+  const isDraft = problems.length > 0;
+  if (isDraft && !options.draft) throw new WillIncompleteError(problems);
+
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.TimesRoman);
   const bold = await doc.embedFont(StandardFonts.TimesRomanBold);
@@ -239,9 +287,14 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   const page = doc.addPage([PAGE_W, PAGE_H]);
   let ctx: DrawCtx = { doc, page, y: PAGE_H - MARGIN, regular, bold, italic };
 
-  const today = new Date().toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'long', year: 'numeric',
-  });
+  /**
+   * Clauses are numbered by a running counter rather than by arithmetic on which
+   * optional sections happen to be present. The old `clauseNum + (hasGifts ? 2 : 0)`
+   * style was already at its limit with two conditional clauses; with five it
+   * would be a guaranteed source of a will whose clauses jump from 3 to 5.
+   */
+  let clauseNo = 0;
+  const nextClause = () => ++clauseNo;
 
   // ── Title ──────────────────────────────────────────────────────────────────
   ctx = gap(ctx, 20);
@@ -249,24 +302,63 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   ctx = gap(ctx, 6);
   ctx = drawText(ctx, `of ${field(data.fullName, 'full name missing')}`, { font: italic, size: 13, center: true });
   ctx = drawText(ctx, field(data.address, 'address missing'), { size: 10, color: GRAY, center: true });
-  ctx = gap(ctx, 4);
-  ctx = drawText(ctx, `Made this day: ${today}`, { size: 10, color: GRAY, center: true });
   ctx = gap(ctx, 16);
   ctx = rule(ctx);
   ctx = gap(ctx, 6);
 
-  // ── Revocation ─────────────────────────────────────────────────────────────
-  ctx = drawText(ctx, 'REVOCATION OF PRIOR WILLS', { font: bold, size: 11 });
+  if (isDraft) {
+    ctx = drawText(ctx, 'DRAFT — THIS DOCUMENT IS INCOMPLETE AND MUST NOT BE SIGNED', {
+      font: bold, size: 11, center: true, color: RED,
+    });
+    ctx = gap(ctx, 4);
+    ctx = drawText(ctx, `${problems.length} item${problems.length === 1 ? '' : 's'} still need${problems.length === 1 ? 's' : ''} attention:`, {
+      size: 10, color: RED,
+    });
+    for (const problem of problems) {
+      ctx = drawText(ctx, `• ${problem.message}`, { size: 10, color: RED, indent: 16 });
+    }
+    ctx = gap(ctx, 10);
+    ctx = rule(ctx);
+    ctx = gap(ctx, 6);
+  }
+
+  // ── 1. Revocation ──────────────────────────────────────────────────────────
+  // The date of birth is stated here because it is the only thing in the
+  // document that separates the testator from a namesake at the same address —
+  // a father and son sharing a name is not an edge case. It was collected,
+  // echoed back on the review screen as confirmed, and then never printed.
+  const dobLong = formatDobLong(data.dob);
+  ctx = drawText(ctx, `${nextClause()}. REVOCATION OF PRIOR WILLS`, { font: bold, size: 11 });
   ctx = gap(ctx, 4);
   ctx = drawText(ctx,
     'I, ' + field(data.fullName, 'full name missing') + ', of ' +
-    field(inlineAddress(data.address), 'address missing') + ', hereby revoke all former Wills and ' +
+    field(inlineAddress(data.address), 'address missing') +
+    (dobLong ? `, born on ${dobLong}` : '') +
+    ', hereby revoke all former Wills and ' +
     'codicils previously made by me and declare this to be my last Will.',
     { size: 11 });
   ctx = gap(ctx, 14);
 
-  // ── Executors ──────────────────────────────────────────────────────────────
-  ctx = drawText(ctx, '1. APPOINTMENT OF EXECUTORS', { font: bold, size: 11 });
+  // ── 2. Declaration as to family (conditional) ──────────────────────────────
+  // Marital status, partner and children were collected and appeared in no
+  // clause anywhere. A will that never mentions the testator's children is the
+  // worst possible posture if a claim is later brought under the Inheritance
+  // (Provision for Family and Dependants) Act 1975: it looks like an oversight
+  // rather than a decision. Recording the family is a statement of fact and
+  // costs nothing; it does not dispose of anything.
+  const family = familyLines(data);
+  if (family.length > 0) {
+    ctx = drawText(ctx, `${nextClause()}. DECLARATION AS TO FAMILY`, { font: bold, size: 11 });
+    ctx = gap(ctx, 4);
+    for (const line of family) {
+      ctx = drawText(ctx, line, { size: 11 });
+      ctx = gap(ctx, 2);
+    }
+    ctx = gap(ctx, 12);
+  }
+
+  // ── 3. Executors ───────────────────────────────────────────────────────────
+  ctx = drawText(ctx, `${nextClause()}. APPOINTMENT OF EXECUTORS`, { font: bold, size: 11 });
   ctx = gap(ctx, 4);
 
   const exec1 = data.primaryExecutor;
@@ -282,7 +374,7 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   if (exec2.name.trim()) {
     ctx = gap(ctx, 4);
     ctx = drawText(ctx,
-      `I also appoint ${sanitizeForPdf(exec2.name).trim()}` +
+      `I also appoint ${field(exec2.name, 'second executor name missing')}` +
       `${exec2.address.trim() ? ' of ' + inlineAddress(exec2.address) : ''} ` +
       `to be Executor jointly with or as a substitute for the above.`,
       { size: 11 });
@@ -298,16 +390,16 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
       : 'the foregoing Executor is not';
     ctx = drawText(ctx,
       `In the event that ${foregoing} able or willing to act, ` +
-      `I appoint ${sanitizeForPdf(backupExec.name).trim()}` +
+      `I appoint ${field(backupExec.name, 'backup executor name missing')}` +
       `${backupExec.address.trim() ? ' of ' + inlineAddress(backupExec.address) : ''} as substitute Executor.`,
       { size: 11 });
   }
 
   ctx = gap(ctx, 14);
 
-  // ── Guardians ──────────────────────────────────────────────────────────────
+  // ── 4. Guardians (conditional) ─────────────────────────────────────────────
   if (data.guardians.length > 0) {
-    ctx = drawText(ctx, '2. APPOINTMENT OF GUARDIANS', { font: bold, size: 11 });
+    ctx = drawText(ctx, `${nextClause()}. APPOINTMENT OF GUARDIANS`, { font: bold, size: 11 });
     ctx = gap(ctx, 4);
     const gNames = data.guardians
       .map(g => field(g.name, 'guardian name missing') + (g.address.trim() ? ' of ' + inlineAddress(g.address) : ''))
@@ -316,14 +408,25 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
       `In the event of my death while any of my children are under the age of 18 years, ` +
       `I appoint ${gNames} to be the guardian(s) of my minor children.`,
       { size: 11 });
+    ctx = gap(ctx, 6);
+    // Children Act 1989 s.5(7)-(8). Without this the appointment reads as though
+    // it takes effect on death whatever happens, which for most parents is not
+    // what the law does: where the child still has a surviving parent with
+    // parental responsibility, the appointment waits.
+    ctx = drawText(ctx,
+      `This appointment is made under section 5(3) of the Children Act 1989. I understand that where, ` +
+      `on my death, my child still has a parent with parental responsibility for them, this appointment ` +
+      `does not take effect immediately but takes effect when the child no longer has a parent with ` +
+      `parental responsibility — unless at my death there is a child arrangements order naming me as a ` +
+      `person with whom the child was to live, or I was the child's only or last surviving special ` +
+      `guardian, in which case it takes effect on my death.`,
+      { size: 10, color: GRAY, indent: 16 });
     ctx = gap(ctx, 14);
   }
 
-  // ── Specific Gifts ─────────────────────────────────────────────────────────
-  const clauseNum = data.guardians.length > 0 ? 3 : 2;
-
+  // ── 5. Specific Gifts (conditional) ────────────────────────────────────────
   if (data.specificGifts.length > 0) {
-    ctx = drawText(ctx, `${clauseNum}. SPECIFIC GIFTS`, { font: bold, size: 11 });
+    ctx = drawText(ctx, `${nextClause()}. SPECIFIC GIFTS`, { font: bold, size: 11 });
     ctx = gap(ctx, 4);
 
     for (let i = 0; i < data.specificGifts.length; i++) {
@@ -379,20 +482,19 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
     ctx = gap(ctx, 8);
   }
 
-  // ── Burden of inheritance tax ──────────────────────────────────────────────
+  // ── 6. Burden of inheritance tax (conditional) ─────────────────────────────
   // Only meaningful once there is a specific gift to allocate tax between. The
   // default rule (IHTA 1984 s.211) already sends tax on UK free-estate property
   // to residue as a testamentary expense, but it is silent on gifts the testator
   // wants the recipient to bear, and it says nothing about what happens when
   // residue cannot carry the charge. Both are spelled out here.
-  const ihtNum = clauseNum + 1;
   const hasGifts = data.specificGifts.length > 0;
 
   if (hasGifts) {
     const chargeableGifts = data.specificGifts.filter(g => !g.isCharity);
     const anyFreeOfTax = chargeableGifts.some(g => g.taxBurden === 'freeOfTax');
 
-    ctx = drawText(ctx, `${ihtNum}. BURDEN OF INHERITANCE TAX`, { font: bold, size: 11 });
+    ctx = drawText(ctx, `${nextClause()}. BURDEN OF INHERITANCE TAX`, { font: bold, size: 11 });
     ctx = gap(ctx, 4);
 
     if (!anyFreeOfTax) {
@@ -429,9 +531,8 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
     ctx = gap(ctx, 14);
   }
 
-  // ── Residuary ──────────────────────────────────────────────────────────────
-  const resNum = clauseNum + (hasGifts ? 2 : 0);
-  ctx = drawText(ctx, `${resNum}. RESIDUARY ESTATE`, { font: bold, size: 11 });
+  // ── 7. Residuary ───────────────────────────────────────────────────────────
+  ctx = drawText(ctx, `${nextClause()}. RESIDUARY ESTATE`, { font: bold, size: 11 });
   ctx = gap(ctx, 4);
   ctx = drawText(ctx,
     `I give all my real and personal estate (including any property over which I have a power of appointment) ` +
@@ -439,6 +540,16 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
     `to the following beneficiaries in the proportions stated:`,
     { size: 11 });
   ctx = gap(ctx, 6);
+
+  // An empty list under a clause that has just promised one reads as finished
+  // prose — the sentence ends in a colon and the next heading follows. Every
+  // scalar field gets a bracketed marker when it is blank; a collection needs
+  // one too.
+  if (data.beneficiaries.length === 0) {
+    ctx = drawText(ctx, '[NO BENEFICIARIES NAMED — THIS WILL DISPOSES OF NOTHING]', {
+      size: 11, indent: 16, font: bold, color: RED,
+    });
+  }
 
   for (const b of data.beneficiaries) {
     ctx = drawText(ctx,
@@ -458,6 +569,11 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
     `In the event that any beneficiary fails so to survive me:`,
     { size: 11 });
   ctx = gap(ctx, 6);
+
+  if (data.beneficiaries.length === 0) {
+    ctx = drawText(ctx, '[NO BENEFICIARIES NAMED]', { size: 11, indent: 16, font: bold, color: RED });
+    ctx = gap(ctx, 6);
+  }
 
   for (let i = 0; i < data.beneficiaries.length; i++) {
     const b = data.beneficiaries[i];
@@ -517,14 +633,49 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
 
   ctx = gap(ctx, 14);
 
-  // ── Funeral Wishes ─────────────────────────────────────────────────────────
+  // ── 8. Powers of executors and trustees ────────────────────────────────────
+  // The statutory powers (Trustee Act 1925 ss.31-32, Trustee Act 2000) do most
+  // of the work, but they leave three real gaps: without an express charging
+  // clause a professional executor cannot charge and will usually renounce;
+  // without a power to appropriate free of the consents required by AEA 1925
+  // s.41 the executors must go back to every beneficiary to hand over an asset
+  // in specie; and there is no express power to postpone sale.
+  ctx = drawText(ctx, `${nextClause()}. POWERS OF MY EXECUTORS AND TRUSTEES`, { font: bold, size: 11 });
+  ctx = gap(ctx, 4);
+  ctx = drawText(ctx,
+    `In addition to the powers conferred on them by law, my Executors and Trustees shall have the ` +
+    `following powers:`,
+    { size: 11 });
+  ctx = gap(ctx, 6);
+  const powers = [
+    `(a) To postpone the sale, calling in and conversion of the whole or any part of my estate for as ` +
+      `long as they think fit, without being liable for any loss arising from that postponement.`,
+    `(b) To appropriate any asset of my estate towards any share or interest in my estate, at such value ` +
+      `as they consider fair, without needing the consents required by section 41 of the Administration ` +
+      `of Estates Act 1925.`,
+    `(c) To insure any asset of my estate for any amount and against any risk, and to pay the premiums ` +
+      `out of income or capital.`,
+    `(d) To invest and to apply capital as freely as if they were absolute beneficial owners, including ` +
+      `in non-income-producing assets.`,
+    `(e) To employ and pay solicitors, accountants, agents and other professionals, and to act on their ` +
+      `advice without being liable for any loss arising from doing so in good faith.`,
+    `(f) Any of my Executors or Trustees who is engaged in a profession or business may charge for work ` +
+      `done by them or their firm in the administration of my estate, including work that a person ` +
+      `acting without professional qualification could have done personally.`,
+  ];
+  for (const power of powers) {
+    ctx = drawText(ctx, power, { size: 11, indent: 16 });
+    ctx = gap(ctx, 4);
+  }
+  ctx = gap(ctx, 10);
+
+  // ── 9. Funeral Wishes (conditional) ────────────────────────────────────────
   // The body is assembled before anything is drawn so the section can be
   // dropped whole when there is nothing to say. Guarding on
   // `funeralWishes || burialPreference` was not enough: "No preference" stores
   // the truthy 'noPreference', which draws no body line, so the heading and the
   // "I express the following wishes..." preamble printed with nothing under
   // them. Whitespace-only free text did the same.
-  const funeralNum = resNum + 1;
   const funeralLines: string[] = [];
 
   if (data.burialPreference === 'burial') {
@@ -541,7 +692,7 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   if (freeTextWishes) funeralLines.push(freeTextWishes);
 
   if (funeralLines.length > 0) {
-    ctx = drawText(ctx, `${funeralNum}. FUNERAL WISHES`, { font: bold, size: 11 });
+    ctx = drawText(ctx, `${nextClause()}. FUNERAL WISHES`, { font: bold, size: 11 });
     ctx = gap(ctx, 4);
     ctx = drawText(ctx,
       `I express the following wishes regarding my funeral (without imposing any legal obligation on my Executors):`,
@@ -555,18 +706,45 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   }
 
   // ── Attestation ────────────────────────────────────────────────────────────
-  ctx = ensureSpace(ctx, 220);
+  ctx = ensureSpace(ctx, 240);
   ctx = rule(ctx);
   ctx = gap(ctx, 6);
   ctx = drawText(ctx, 'ATTESTATION', { font: bold, size: 12, center: true });
   ctx = gap(ctx, 8);
+
+  if (isDraft) {
+    ctx = drawText(ctx, 'DO NOT SIGN — this draft is incomplete. Signing it would revoke any earlier Will you have made.', {
+      font: bold, size: 11, color: RED,
+    });
+    ctx = gap(ctx, 10);
+  }
+
   ctx = drawText(ctx,
     `SIGNED by the above-named Testator as their last Will in our presence and then by us in the presence of ` +
     `the Testator and of each other:`,
     { size: 11 });
-  ctx = gap(ctx, 16);
+  ctx = gap(ctx, 14);
 
-  ctx = sigBlock(ctx, 'TESTATOR', ['Signature', 'Date']);
+  // One date, in one place. The document used to print the date it was
+  // generated at the top AND leave a blank date line here, so a will signed a
+  // week after download carried two different dates — which invites the Probate
+  // Registry to ask for affidavit evidence of the true execution date, and
+  // raises the suspicion of page substitution. Dating also matters in its own
+  // right: Children Act 1989 s.5(5) requires a guardian appointment to be dated.
+  ctx = drawText(ctx, 'DATE OF SIGNING (write the date here, in your own hand, on the day you sign):', {
+    font: bold, size: 10,
+  });
+  ctx = gap(ctx, 6);
+  ctx = ensureSpace(ctx, 28);
+  ctx.page.drawLine({
+    start: { x: MARGIN, y: ctx.y },
+    end: { x: PAGE_W - MARGIN, y: ctx.y },
+    thickness: 0.5,
+    color: GRAY,
+  });
+  ctx = { ...ctx, y: ctx.y - 20 };
+
+  ctx = sigBlock(ctx, 'TESTATOR', ['Signature']);
   ctx = gap(ctx, 12);
   ctx = sigBlock(ctx, 'WITNESS 1 (must not be a beneficiary or spouse of a beneficiary)', [
     'Signature', 'Full name', 'Address', 'Occupation',
@@ -597,14 +775,48 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
     ['4. Witness signature',
      'After you have signed, each witness must sign the Will in your presence and in the presence of the other witness, ' +
      'on the same occasion. Both witnesses must write their full names, addresses and occupations.'],
-    ['5. No alterations after signing',
+    ['5. Fill in the date',
+     'Write the date on the "DATE OF SIGNING" line on the day you sign — not before. If your Will appoints a ' +
+     'guardian for your children, the appointment must be dated to be effective (Children Act 1989, section 5(5)), ' +
+     'so leaving the date blank can undo it.'],
+    ['6. No alterations after signing',
      'Once signed and witnessed, do not alter the Will. Any amendment must be done by a new codicil or a fresh Will.'],
-    ['6. Store safely',
+    ['7. Store safely',
      'Keep the original Will in a safe place — a solicitor\'s safe, a bank, or the Probate Registry. ' +
      'Tell your Executors where to find it.'],
   ];
 
   for (const [title, body] of instructions) {
+    ctx = drawText(ctx, title, { font: bold, size: 11 });
+    ctx = gap(ctx, 2);
+    ctx = drawText(ctx, body, { size: 11 });
+    ctx = gap(ctx, 10);
+  }
+
+  // Four things routinely undo a will that was correctly signed. None of them
+  // are visible from inside the document, so they are stated here.
+  ctx = gap(ctx, 4);
+  ctx = drawText(ctx, 'WHAT CAN CHANGE OR OVERRIDE THIS WILL', { font: bold, size: 12 });
+  ctx = gap(ctx, 8);
+  const afterwards: [string, string][] = [
+    ['Marriage or civil partnership revokes it',
+     'Getting married or entering a civil partnership automatically revokes your Will (Wills Act 1837, section 18) ' +
+     'unless it was made in express expectation of that marriage. Make a new Will after you marry.'],
+    ['Divorce or dissolution changes it',
+     'If your marriage or civil partnership ends, your former spouse or civil partner is treated as having died ' +
+     'before you (Wills Act 1837, section 18A). Any gift to them and any appointment of them as executor fails, ' +
+     'which can leave part of your estate undisposed of.'],
+    ['Jointly owned property may pass outside this Will',
+     'Property you own as beneficial joint tenants — commonly a home or a joint bank account — passes automatically ' +
+     'to the surviving owner by survivorship, whatever this Will says. If you want your share to pass under your ' +
+     'Will, the joint tenancy must be severed first.'],
+    ['Certain people can claim against your estate',
+     'A spouse, civil partner, former spouse, cohabitee of at least two years, child, or someone you were ' +
+     'maintaining can apply to the court for provision from your estate under the Inheritance (Provision for ' +
+     'Family and Dependants) Act 1975, normally within six months of the grant of probate. Leaving someone out ' +
+     'does not always end the matter.'],
+  ];
+  for (const [title, body] of afterwards) {
     ctx = drawText(ctx, title, { font: bold, size: 11 });
     ctx = gap(ctx, 2);
     ctx = drawText(ctx, body, { size: 11 });
@@ -617,7 +829,7 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   ctx = drawText(ctx, 'IMPORTANT NOTICE', { font: bold, size: 13, center: true });
   ctx = gap(ctx, 4);
   ctx = drawText(ctx, 'THIS IS A TEMPLATE DOCUMENT — NOT LEGAL ADVICE', {
-    font: bold, size: 11, center: true, color: rgb(0.7, 0.1, 0.1),
+    font: bold, size: 11, center: true, color: RED,
   });
   ctx = gap(ctx, 14);
   const disclaimers = [
@@ -631,5 +843,48 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
     ctx = gap(ctx, 8);
   }
 
+  // ── Page furniture ─────────────────────────────────────────────────────────
+  // Numbered pages naming the testator make a substituted or missing page
+  // obvious; the draft watermark has to go on every page, including ones that
+  // did not exist when the draft banner was drawn.
+  const pages = doc.getPages();
+  const footerName = sanitizeForPdf(data.fullName).trim();
+  pages.forEach((p, index) => {
+    if (isDraft) {
+      const mark = 'DRAFT — DO NOT SIGN';
+      const markSize = 46;
+      const markWidth = bold.widthOfTextAtSize(mark, markSize);
+      // Centred on the diagonal: rotating about the anchor means the text runs
+      // up and to the right, so the start point is offset back along that line.
+      p.drawText(mark, {
+        x: PAGE_W / 2 - (markWidth / 2) * Math.cos(Math.PI / 4),
+        y: PAGE_H / 2 - (markWidth / 2) * Math.sin(Math.PI / 4),
+        size: markSize,
+        font: bold,
+        color: RED,
+        opacity: 0.18,
+        rotate: degrees(45),
+      });
+    }
+    const footer = `${footerName ? footerName + ' — ' : ''}Last Will and Testament — Page ${index + 1} of ${pages.length}`;
+    p.drawText(footer, {
+      x: MARGIN + (CONTENT_W - regular.widthOfTextAtSize(footer, 8)) / 2,
+      y: 42,
+      size: 8,
+      font: regular,
+      color: GRAY,
+    });
+  });
+
   return doc.save();
+}
+
+/**
+ * Age of the testator at the date of the document, when it can be established.
+ * Exported for the review screen, which shows it back so an obviously wrong
+ * year of birth is caught before the document is produced rather than after.
+ */
+export function testatorAge(data: WillData): number | null {
+  const dob = parseUkDate(data.dob);
+  return dob ? ageInYears(dob) : null;
 }

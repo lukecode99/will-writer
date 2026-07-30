@@ -80,6 +80,9 @@ export const shared = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  btnDisabled: {
+    opacity: 0.45,
+  },
   secondaryBtn: {
     borderRadius: 12,
     paddingVertical: 12,

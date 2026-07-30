@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { WillData, MaritalStatus } from '../types';
+import { dobError, parseUkDate, ageInYears } from '../family';
+import { unprintableChars } from '../text';
 import { C, shared } from './shared';
 
 interface Props {
@@ -22,9 +24,38 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
 
   function validate() {
     const e: Record<string, string> = {};
-    if (!data.fullName.trim()) e.fullName = 'Full name is required';
-    if (!data.address.trim()) e.address = 'Address is required';
-    if (!data.dob.trim()) e.dob = 'Date of birth is required';
+
+    if (!data.fullName.trim()) {
+      e.fullName = 'Full name is required';
+    } else {
+      // A name we cannot print is caught here rather than at the end, so it is
+      // reported next to the field that caused it while it is still on screen.
+      const bad = unprintableChars(data.fullName);
+      if (bad.length > 0) {
+        e.fullName = `We cannot print ${bad.join(' ')}. Please write your name using the Latin alphabet — it has to match the name a court in England and Wales will read.`;
+      }
+    }
+
+    if (!data.address.trim()) {
+      e.address = 'Address is required';
+    } else {
+      const bad = unprintableChars(data.address);
+      if (bad.length > 0) e.address = `We cannot print ${bad.join(' ')} in your address.`;
+    }
+
+    // The old check was `!dob.trim()`, so "99/99/9999" passed and was echoed
+    // back on the review screen as if it had been confirmed.
+    const dobProblem = dobError(data.dob);
+    if (dobProblem) {
+      e.dob = dobProblem;
+    } else {
+      const dob = parseUkDate(data.dob);
+      // Wills Act 1837 s.7 — a will made under 18 is not valid.
+      if (dob && ageInYears(dob) < 18) {
+        e.dob = 'You must be 18 or over to make a will in England and Wales.';
+      }
+    }
+
     if (!data.maritalStatus) e.maritalStatus = 'Please select a marital status';
     setErrors(e);
     return Object.keys(e).length === 0;

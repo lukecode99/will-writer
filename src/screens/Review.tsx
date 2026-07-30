@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { WillData, Beneficiary } from '../types';
+import { hasMinorChildren } from '../family';
 import { C, shared } from './shared';
 import { notify, deliverPdf } from '../platform';
 // Imported statically on purpose. This was briefly a dynamic import() to keep a
@@ -9,14 +10,28 @@ import { notify, deliverPdf } from '../platform';
 // with "Requiring unknown module" and the PDF could never be generated. The
 // underlying tslib problem is fixed properly by the resolver alias in
 // metro.config.js, so the lazy load bought nothing.
-import { generateWillPdf } from '../pdfGen';
+import { generateWillPdf, WillIncompleteError } from '../pdfGen';
+import {
+  StepKey,
+  WillProblem,
+  blockingProblems,
+  warnings,
+  parsePercentage,
+  formatPercentage,
+} from '../validation';
 
 interface Props {
   data: WillData;
-  onEdit: (step: number) => void;
+  onEdit: (step: StepKey) => void;
   onBack: () => void;
   onRestart: () => void;
-  hasGuardianStep: boolean;
+}
+
+/** A share as the user should see it echoed back, including when it is unusable. */
+function shareLabel(raw: string): string {
+  const value = parsePercentage(raw);
+  if (value !== null) return formatPercentage(value);
+  return raw.trim() ? `${raw.trim()} — not a valid share` : 'no share set';
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -30,20 +45,20 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function Section({
   title,
-  step,
+  stepKey,
   children,
   onEdit,
 }: {
   title: string;
-  step: number;
+  stepKey: StepKey;
   children: React.ReactNode;
-  onEdit: (step: number) => void;
+  onEdit: (step: StepKey) => void;
 }) {
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{title}</Text>
-        <TouchableOpacity onPress={() => onEdit(step)}>
+        <TouchableOpacity onPress={() => onEdit(stepKey)}>
           <Text style={styles.editLink}>Edit</Text>
         </TouchableOpacity>
       </View>
@@ -52,16 +67,54 @@ function Section({
   );
 }
 
+/** A list of problems, each tappable through to the step that fixes it. */
+function ProblemPanel({
+  title,
+  intro,
+  problems,
+  tone,
+  onEdit,
+}: {
+  title: string;
+  intro: string;
+  problems: WillProblem[];
+  tone: 'blocking' | 'warning';
+  onEdit: (step: StepKey) => void;
+}) {
+  if (problems.length === 0) return null;
+  const panel = tone === 'blocking' ? styles.blockingPanel : styles.warningPanel;
+  const heading = tone === 'blocking' ? styles.blockingTitle : styles.warningTitle;
+  const body = tone === 'blocking' ? styles.blockingText : styles.warningText;
+  return (
+    <View style={panel}>
+      <Text style={heading}>{title}</Text>
+      <Text style={[body, { marginBottom: 8 }]}>{intro}</Text>
+      {problems.map((problem, i) => (
+        <TouchableOpacity
+          key={`${problem.step}-${i}`}
+          style={styles.problemRow}
+          onPress={() => onEdit(problem.step)}
+        >
+          <Text style={body}>• {problem.message}</Text>
+          <Text style={styles.problemFix}>Fix this →</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
 function proRataResult(
   beneficiaries: Beneficiary[],
   deceasedId: string,
 ): Array<{ name: string; pct: number }> {
-  const survivors = beneficiaries.filter(b => b.id !== deceasedId && (parseFloat(b.percentage) || 0) > 0);
-  const total = survivors.reduce((s, b) => s + (parseFloat(b.percentage) || 0), 0);
+  const survivors = beneficiaries.filter(
+    b => b.id !== deceasedId && (parsePercentage(b.percentage) ?? 0) > 0,
+  );
+  const total = survivors.reduce((s, b) => s + (parsePercentage(b.percentage) ?? 0), 0);
   if (total === 0 || survivors.length === 0) return [];
   return survivors.map(b => ({
     name: b.name || '(unnamed)',
-    pct: ((parseFloat(b.percentage) || 0) / total) * 100,
+    pct: ((parsePercentage(b.percentage) ?? 0) / total) * 100,
   }));
 }
 
@@ -82,23 +135,46 @@ function whatIfOutcome(b: Beneficiary, allBens: Beneficiary[]): string {
   }
 }
 
-export default function Review({ data, onEdit, onBack, onRestart, hasGuardianStep }: Props) {
+export default function Review({ data, onEdit, onBack, onRestart }: Props) {
   const [generating, setGenerating] = useState(false);
 
+  // Recomputed on every render rather than held in state: the review screen is
+  // the one place that must never be describing an older version of the answers
+  // than the one on screen.
+  const blocking = blockingProblems(data);
+  const advisory = warnings(data);
+  const canGenerate = blocking.length === 0;
+  const showGuardians = hasMinorChildren(data);
+
   async function handleGenerate() {
+    // The button is disabled while anything is blocking, but the check is
+    // repeated here because a disabled button is a presentation detail and this
+    // is the last point before a document exists.
+    if (blocking.length > 0) {
+      notify('There are still some things to fix before your will can be created. They are listed at the top of this page.');
+      return;
+    }
     setGenerating(true);
     try {
       const bytes = await generateWillPdf(data);
       await deliverPdf(bytes, `Will_${data.fullName.replace(/\s+/g, '_') || 'Draft'}.pdf`);
     } catch (err) {
       console.error('PDF generation failed', err);
-      notify('Could not generate your PDF. Please try again.');
+      if (err instanceof WillIncompleteError) {
+        notify(err.problems.map(p => `• ${p.message}`).join('\n'), 'Not ready yet');
+      } else {
+        notify('Could not generate your PDF. Please try again.');
+      }
     } finally {
       setGenerating(false);
     }
   }
 
   async function handlePrintService() {
+    if (blocking.length > 0) {
+      notify('There are still some things to fix before your will can be printed. They are listed at the top of this page.');
+      return;
+    }
     notify(
       Platform.OS === 'web'
         ? 'Sending to print service — downloading your PDF now.\n\n(Print dispatch will be wired in a future update.)'
@@ -115,14 +191,30 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
       <Text style={shared.heading}>Review Your Will</Text>
       <Text style={shared.sub}>Check everything below before generating your PDF. Tap Edit to change any section.</Text>
 
-      <Section title="About You" step={0} onEdit={onEdit}>
+      <ProblemPanel
+        tone="blocking"
+        title="Fix these before you can create your will"
+        intro="A will with any of these missing would not do what you want it to do — and signing it would still cancel any earlier will you have made."
+        problems={blocking}
+        onEdit={onEdit}
+      />
+
+      <ProblemPanel
+        tone="warning"
+        title="Worth a second look"
+        intro="None of these stop you creating your will. Check they are what you meant."
+        problems={advisory}
+        onEdit={onEdit}
+      />
+
+      <Section title="About You" stepKey="about" onEdit={onEdit}>
         <Row label="Name" value={data.fullName} />
         <Row label="Address" value={data.address} />
         <Row label="Date of birth" value={data.dob} />
         <Row label="Marital status" value={data.maritalStatus} />
       </Section>
 
-      <Section title="Partner & Children" step={1} onEdit={onEdit}>
+      <Section title="Partner & Children" stepKey="family" onEdit={onEdit}>
         {data.partnerName
           ? <Row label="Partner" value={data.partnerName} />
           : <Text style={styles.empty}>No partner recorded</Text>
@@ -135,14 +227,17 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
         }
       </Section>
 
-      <Section title="Executors" step={2} onEdit={onEdit}>
+      <Section title="Executors" stepKey="executors" onEdit={onEdit}>
         <Row label="Primary" value={data.primaryExecutor.name} />
         {data.secondaryExecutor.name ? <Row label="Secondary" value={data.secondaryExecutor.name} /> : null}
         {data.backupExecutor.name ? <Row label="Backup" value={data.backupExecutor.name} /> : null}
       </Section>
 
-      {hasGuardianStep ? (
-        <Section title="Guardians" step={3} onEdit={onEdit}>
+      {/* Shown whenever guardians exist, even if the guardians step is hidden
+          because no child is under 18 any more. Those guardians are still in the
+          document, so hiding the section made them impossible to remove. */}
+      {(showGuardians || data.guardians.length > 0) ? (
+        <Section title="Guardians" stepKey="guardians" onEdit={onEdit}>
           {data.guardians.length === 0
             ? <Text style={styles.empty}>No guardians appointed</Text>
             : data.guardians.map((g, i) => (
@@ -152,7 +247,7 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
         </Section>
       ) : null}
 
-      <Section title="Specific Gifts" step={hasGuardianStep ? 4 : 3} onEdit={onEdit}>
+      <Section title="Specific Gifts" stepKey="gifts" onEdit={onEdit}>
         {data.specificGifts.length === 0
           ? <Text style={styles.empty}>No specific gifts</Text>
           : data.specificGifts.map((g, i) => (
@@ -177,14 +272,14 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
         }
       </Section>
 
-      <Section title="Residuary Estate" step={hasGuardianStep ? 5 : 4} onEdit={onEdit}>
+      <Section title="Residuary Estate" stepKey="residuary" onEdit={onEdit}>
         {data.beneficiaries.length === 0
           ? <Text style={styles.empty}>No beneficiaries added</Text>
           : data.beneficiaries.map(b => (
             <Row
               key={b.id}
               label={b.name || '(unnamed)'}
-              value={`${b.percentage}%${b.relationship ? ` (${b.relationship})` : ''}${b.isMinor ? ' · minor' : ''}`}
+              value={`${shareLabel(b.percentage)}${b.relationship ? ` (${b.relationship})` : ''}${b.isMinor ? ' · minor' : ''}`}
             />
           ))
         }
@@ -200,7 +295,7 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
           {data.beneficiaries.map(b => (
             <View key={b.id} style={styles.whatIfRow}>
               <Text style={styles.whatIfName}>
-                {b.name || '(unnamed)'} ({b.percentage}%)
+                {b.name || '(unnamed)'} ({shareLabel(b.percentage)})
               </Text>
               <Text style={styles.whatIfSub}>
                 {subTypeLabel(b.substitution.type)} → {whatIfOutcome(b, data.beneficiaries)}
@@ -216,7 +311,7 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
         </View>
       )}
 
-      <Section title="Funeral Wishes" step={hasGuardianStep ? 6 : 5} onEdit={onEdit}>
+      <Section title="Funeral Wishes" stepKey="funeral" onEdit={onEdit}>
         {data.burialPreference ? <Row label="Preference" value={data.burialPreference} /> : null}
         {data.funeralWishes
           ? <Row label="Wishes" value={data.funeralWishes} />
@@ -230,9 +325,9 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
       </View>
 
       <TouchableOpacity
-        style={[shared.primaryBtn, generating ? styles.btnDisabled : null]}
+        style={[shared.primaryBtn, (generating || !canGenerate) ? styles.btnDisabled : null]}
         onPress={handleGenerate}
-        disabled={generating}
+        disabled={generating || !canGenerate}
       >
         {generating
           ? <ActivityIndicator color="#fff" />
@@ -241,12 +336,20 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[shared.secondaryBtn, { marginTop: 10 }]}
+        style={[shared.secondaryBtn, { marginTop: 10 }, (generating || !canGenerate) ? styles.btnDisabled : null]}
         onPress={handlePrintService}
-        disabled={generating}
+        disabled={generating || !canGenerate}
       >
         <Text style={shared.secondaryBtnText}>📬  Send to print service</Text>
       </TouchableOpacity>
+
+      {!canGenerate ? (
+        <Text style={styles.blockedNote}>
+          {blocking.length === 1
+            ? 'One thing above still needs fixing before your will can be created.'
+            : `${blocking.length} things above still need fixing before your will can be created.`}
+        </Text>
+      ) : null}
 
       <TouchableOpacity style={[shared.secondaryBtn, { marginTop: 8 }]} onPress={onBack}>
         <Text style={shared.secondaryBtnText}>Back</Text>
@@ -350,6 +453,59 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   btnDisabled: {
-    opacity: 0.7,
+    opacity: 0.45,
+  },
+  blockingPanel: {
+    backgroundColor: '#FDECEA',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F0B3AC',
+  },
+  blockingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#8A1C10',
+    marginBottom: 4,
+  },
+  blockingText: {
+    fontSize: 13,
+    color: '#8A1C10',
+    lineHeight: 18,
+  },
+  warningPanel: {
+    backgroundColor: '#FFF8E1',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E8D48B',
+  },
+  warningTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#7A5A00',
+    marginBottom: 4,
+  },
+  warningText: {
+    fontSize: 13,
+    color: '#7A5A00',
+    lineHeight: 18,
+  },
+  problemRow: {
+    paddingVertical: 6,
+  },
+  problemFix: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.primary,
+    marginTop: 2,
+  },
+  blockedNote: {
+    fontSize: 12,
+    color: C.textLight,
+    textAlign: 'center',
+    marginTop: 10,
   },
 });

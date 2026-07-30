@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
 import { WillData, Beneficiary, SubstitutionType } from '../types';
+import { blockingProblems, parsePercentage, percentageTotal } from '../validation';
 import { C, shared } from './shared';
 import { notify } from '../platform';
 
@@ -15,9 +16,6 @@ function uid() {
   return Math.random().toString(36).slice(2);
 }
 
-function totalPct(beneficiaries: Beneficiary[]): number {
-  return beneficiaries.reduce((s, b) => s + (parseFloat(b.percentage) || 0), 0);
-}
 
 /**
  * Percentages are digits only, 1–100, at most two decimal places.
@@ -45,27 +43,26 @@ function sanitisePct(raw: string): string {
   return s;
 }
 
-/** Returns an error string for a share that can't go in a will, or '' if it's fine. */
+/**
+ * Returns an error string for a share that can't go in a will, or '' if it's fine.
+ * Uses the same strict parser as the document generator, so what this screen
+ * accepts and what the PDF will accept cannot drift apart.
+ */
 function pctError(raw: string): string {
-  const s = raw.trim();
-  if (s === '') return 'Enter a share between 1 and 100.';
-  const n = parseFloat(s);
-  if (isNaN(n)) return 'Enter a number between 1 and 100.';
-  if (n < 1) return 'Shares must be at least 1%.';
-  if (n > 100) return 'Shares cannot be more than 100%.';
-  return '';
+  if (raw.trim() === '') return 'Enter a share between 1 and 100.';
+  return parsePercentage(raw) === null ? 'Enter a number between 1 and 100.' : '';
 }
 
 function proRataResult(
   beneficiaries: Beneficiary[],
   deceasedId: string,
 ): Array<{ name: string; pct: number }> {
-  const survivors = beneficiaries.filter(b => b.id !== deceasedId && (parseFloat(b.percentage) || 0) > 0);
-  const totalSurvivor = survivors.reduce((s, b) => s + (parseFloat(b.percentage) || 0), 0);
+  const survivors = beneficiaries.filter(b => b.id !== deceasedId && (parsePercentage(b.percentage) ?? 0) > 0);
+  const totalSurvivor = survivors.reduce((s, b) => s + (parsePercentage(b.percentage) ?? 0), 0);
   if (totalSurvivor === 0 || survivors.length === 0) return [];
   return survivors.map(b => ({
     name: b.name || '(unnamed)',
-    pct: ((parseFloat(b.percentage) || 0) / totalSurvivor) * 100,
+    pct: ((parsePercentage(b.percentage) ?? 0) / totalSurvivor) * 100,
   }));
 }
 
@@ -138,25 +135,19 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
     onChange({ beneficiaries: data.beneficiaries.filter(b => b.id !== id) });
   }
 
-  const total = totalPct(data.beneficiaries);
+  const total = percentageTotal(data);
   const totalOk = data.beneficiaries.length > 0 && Math.abs(total - 100) < 0.01;
 
+  /**
+   * The rules live in `validation.ts`, not here. This screen used to be the only
+   * place the 100% check existed, so every other route to Review skipped it. Now
+   * it asks the shared checker for whatever it says about this step, which means
+   * this button and the Review screen can never disagree.
+   */
   function handleNext() {
-    if (data.beneficiaries.length === 0) {
-      notify('Add at least one beneficiary for your residuary estate.');
-      return;
-    }
-    // Check each share on its own before the total — otherwise a junk entry that
-    // parses to 0 can be masked by the others still summing to 100.
-    for (let i = 0; i < data.beneficiaries.length; i++) {
-      const err = pctError(data.beneficiaries[i].percentage);
-      if (err) {
-        notify(`Beneficiary ${i + 1}${data.beneficiaries[i].name ? ` (${data.beneficiaries[i].name})` : ''}: ${err}`);
-        return;
-      }
-    }
-    if (!totalOk) {
-      notify(`Percentages must add up to 100%. Currently: ${total.toFixed(1)}%`);
+    const problems = blockingProblems(data).filter(p => p.step === 'residuary');
+    if (problems.length > 0) {
+      notify(problems.map(p => `• ${p.message}`).join('\n'), 'Not finished yet');
       return;
     }
     onNext();
@@ -181,12 +172,17 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
 
           <Text style={shared.label}>Full name</Text>
           <TextInput
-            style={shared.input}
+            style={[shared.input, !b.name.trim() ? styles.inputError : null]}
             placeholder="Full legal name"
             value={b.name}
             onChangeText={v => updateBen(b.id, { name: v })}
             autoCapitalize="words"
           />
+          {!b.name.trim() ? (
+            <Text style={styles.errorText}>
+              A share left to nobody in particular cannot be paid out. Name this beneficiary, or remove them.
+            </Text>
+          ) : null}
 
           <Text style={shared.label}>Relationship</Text>
           <TextInput
@@ -258,12 +254,17 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
             <>
               <Text style={shared.label}>Name of substitute recipient</Text>
               <TextInput
-                style={shared.input}
+                style={[shared.input, !b.substitution.namedPerson.trim() ? styles.inputError : null]}
                 placeholder="Full name or charity name"
                 value={b.substitution.namedPerson}
                 onChangeText={v => updateBen(b.id, { substitution: { ...b.substitution, namedPerson: v } })}
                 autoCapitalize="words"
               />
+              {!b.substitution.namedPerson.trim() ? (
+                <Text style={styles.errorText}>
+                  You have chosen a named substitute but not said who. Enter a name, or pick a different option above.
+                </Text>
+              ) : null}
             </>
           )}
 

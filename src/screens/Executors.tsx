@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import { WillData, Executor } from '../types';
+import { blockingProblems } from '../validation';
 import { shared } from './shared';
 import { notify } from '../platform';
 
@@ -94,11 +95,25 @@ export default function Executors({ data, onChange, onNext, onBack }: Props) {
         </TouchableOpacity>
       )}
 
+      {/* An address with no name against it is the one that used to get through:
+          the extra executor form gets opened, an address typed, the name left
+          blank, and the will then appoints an unnamed person at a real address. */}
+      {[data.secondaryExecutor, data.backupExecutor].some(e => e.address.trim() && !e.name.trim()) ? (
+        <Text style={shared.error}>
+          One of the extra executors has an address but no name. Give them a name, or clear the address.
+        </Text>
+      ) : null}
+
       <TouchableOpacity
         style={shared.primaryBtn}
         onPress={() => {
-          if (!data.primaryExecutor.name.trim()) {
-            notify('Please enter at least a primary executor name.');
+          const problems = blockingProblems(data).filter(p => p.step === 'executors');
+          if (problems.length > 0) {
+            notify(problems.map(p => `• ${p.message}`).join('\n'), 'Not finished yet');
+            return;
+          }
+          if ([data.secondaryExecutor, data.backupExecutor].some(e => e.address.trim() && !e.name.trim())) {
+            notify('One of the extra executors has an address but no name. Give them a name, or clear the address.');
             return;
           }
           onNext();
