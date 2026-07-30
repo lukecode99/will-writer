@@ -11,6 +11,13 @@ export const C = {
   success: '#059669',
 };
 
+/**
+ * Forms are capped to this width and centred. Roughly the width of an iPhone
+ * Pro Max, so phones are unaffected; on an iPad it stops a name field being
+ * stretched across the whole screen.
+ */
+export const CONTENT_MAX_WIDTH = 560;
+
 export const shared = StyleSheet.create({
   scrollContent: {
     padding: 20,

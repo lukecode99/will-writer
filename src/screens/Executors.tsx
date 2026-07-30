@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import { WillData, Executor } from '../types';
 import { shared } from './shared';
+import { notify } from '../platform';
 
 interface Props {
   data: WillData;
@@ -97,7 +98,7 @@ export default function Executors({ data, onChange, onNext, onBack }: Props) {
         style={shared.primaryBtn}
         onPress={() => {
           if (!data.primaryExecutor.name.trim()) {
-            alert('Please enter at least a primary executor name.');
+            notify('Please enter at least a primary executor name.');
             return;
           }
           onNext();

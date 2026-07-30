@@ -4,19 +4,24 @@
   "main": "./index.ts",
   "scripts": {
     "start": "expo start",
+    "ios": "expo start --ios",
     "web": "expo start --web",
     "export:web": "npx expo export --platform web --public-url https://lukecode99.github.io/will-writer"
   },
   "dependencies": {
     "@babel/runtime": "^8.0.0",
     "@expo/metro-runtime": "~4.0.1",
+    "@react-native-async-storage/async-storage": "1.23.1",
     "expo": "~52.0.0",
+    "expo-file-system": "~18.0.12",
+    "expo-sharing": "~13.0.1",
     "expo-status-bar": "~2.0.0",
     "pdf-lib": "^1.17.1",
     "tslib": "^2.0.0",
     "react": "18.3.1",
     "react-dom": "^18.2.0",
     "react-native": "0.76.7",
+    "react-native-safe-area-context": "4.12.0",
     "react-native-web": "~0.19.6"
   },
   "devDependencies": {

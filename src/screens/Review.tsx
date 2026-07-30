@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { WillData, Beneficiary } from '../types';
 import { C, shared } from './shared';
+import { notify, deliverPdf } from '../platform';
 // Imported statically on purpose. This was briefly a dynamic import() to keep a
 // pdf-lib load failure off the startup path, but `expo export --platform web`
 // splits the chunk out without emitting a loader for it, so the require failed
@@ -88,25 +89,21 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
     setGenerating(true);
     try {
       const bytes = await generateWillPdf(data);
-      const blob = new Blob([bytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Will_${data.fullName.replace(/\s+/g, '_') || 'Draft'}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      await deliverPdf(bytes, `Will_${data.fullName.replace(/\s+/g, '_') || 'Draft'}.pdf`);
     } catch (err) {
       console.error('PDF generation failed', err);
-      alert('Could not generate PDF. Please try again.');
+      notify('Could not generate your PDF. Please try again.');
     } finally {
       setGenerating(false);
     }
   }
 
   async function handlePrintService() {
-    alert('Sending to print service — downloading your PDF now.\n\n(Print dispatch will be wired in a future update.)');
+    notify(
+      Platform.OS === 'web'
+        ? 'Sending to print service — downloading your PDF now.\n\n(Print dispatch will be wired in a future update.)'
+        : 'Sending to print service — opening your PDF now. Choose Print or Save to Files.\n\n(Print dispatch will be wired in a future update.)',
+    );
     await handleGenerate();
   }
 

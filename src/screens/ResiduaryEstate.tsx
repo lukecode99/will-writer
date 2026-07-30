@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
 import { WillData, Beneficiary, SubstitutionType } from '../types';
 import { C, shared } from './shared';
+import { notify } from '../platform';
 
 interface Props {
   data: WillData;
@@ -142,7 +143,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
 
   function handleNext() {
     if (data.beneficiaries.length === 0) {
-      alert('Add at least one beneficiary for your residuary estate.');
+      notify('Add at least one beneficiary for your residuary estate.');
       return;
     }
     // Check each share on its own before the total — otherwise a junk entry that
@@ -150,12 +151,12 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
     for (let i = 0; i < data.beneficiaries.length; i++) {
       const err = pctError(data.beneficiaries[i].percentage);
       if (err) {
-        alert(`Beneficiary ${i + 1}${data.beneficiaries[i].name ? ` (${data.beneficiaries[i].name})` : ''}: ${err}`);
+        notify(`Beneficiary ${i + 1}${data.beneficiaries[i].name ? ` (${data.beneficiaries[i].name})` : ''}: ${err}`);
         return;
       }
     }
     if (!totalOk) {
-      alert(`Percentages must add up to 100%. Currently: ${total.toFixed(1)}%`);
+      notify(`Percentages must add up to 100%. Currently: ${total.toFixed(1)}%`);
       return;
     }
     onNext();

@@ -1,7 +1,23 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, StatusBar, StyleSheet, SafeAreaView } from 'react-native';
+import {
+  View,
+  StatusBar,
+  StyleSheet,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WillData, EMPTY_WILL } from './src/types';
-import { loadWillData, saveWillData, loadStep, saveStep, clearWillData } from './src/storage';
+import {
+  hydrateStorage,
+  loadWillData,
+  saveWillData,
+  loadStep,
+  saveStep,
+  clearWillData,
+} from './src/storage';
+import { C, CONTENT_MAX_WIDTH } from './src/screens/shared';
 import ProgressHeader from './src/components/ProgressHeader';
 import AboutYou from './src/screens/AboutYou';
 import PartnerChildren from './src/screens/PartnerChildren';
@@ -14,8 +30,6 @@ import Review from './src/screens/Review';
 
 // Steps: 0=About, 1=Partner/Children, 2=Executors, 3=Guardians*, 4=Gifts, 5=Residuary, 6=Funeral, 7=Review
 // *Guardians shown when there are/may be minor children
-
-const TOTAL_STEPS = 8;
 
 function hasMinorChildren(data: WillData): boolean {
   if (data.children.length === 0) return false;
@@ -31,7 +45,13 @@ function hasMinorChildren(data: WillData): boolean {
   });
 }
 
-export default function App() {
+/**
+ * The wizard itself. Split out from `App` so that its `useState` initialisers,
+ * which read the saved draft synchronously, cannot run until storage has been
+ * read off disk -- see `hydrateStorage`.
+ */
+function Wizard() {
+  const insets = useSafeAreaInsets();
   const [data, setData] = useState<WillData>(() => loadWillData());
   const [step, setStep] = useState<number>(() => loadStep());
 
@@ -78,9 +98,6 @@ export default function App() {
     setStep(0);
   }
 
-  // Visual step label: count step 3 as "3 (Guardians)" only when shown
-  const visibleStep = (!needsGuardians && step >= 4) ? step - 1 : step;
-
   const STEP_TITLES = [
     'About You',
     'Family',
@@ -100,59 +117,100 @@ export default function App() {
   const isReview = step === 7;
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1B3A6B" />
-      {!isReview ? (
-        <ProgressHeader
-          step={visibleIndex}
-          totalSteps={totalVisible}
-          title={stepTitle}
-        />
-      ) : (
-        <ProgressHeader
-          step={totalVisible - 1}
-          totalSteps={totalVisible}
-          title="Review"
-        />
-      )}
+    <View style={styles.root}>
+      <ProgressHeader
+        step={isReview ? totalVisible - 1 : visibleIndex}
+        totalSteps={totalVisible}
+        title={isReview ? 'Review' : stepTitle}
+      />
 
-      {step === 0 && (
-        <AboutYou data={data} onChange={update} onNext={nextStep} />
-      )}
-      {step === 1 && (
-        <PartnerChildren data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
-      )}
-      {step === 2 && (
-        <Executors data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
-      )}
-      {step === 3 && (
-        <Guardians data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
-      )}
-      {step === 4 && (
-        <SpecificGifts data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
-      )}
-      {step === 5 && (
-        <ResiduaryEstate data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
-      )}
-      {step === 6 && (
-        <FuneralWishes data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
-      )}
-      {step === 7 && (
-        <Review
-          data={data}
-          onEdit={goToStep}
-          onBack={prevStep}
-          onRestart={restart}
-          hasGuardianStep={needsGuardians}
-        />
-      )}
+      {/* Without this the keyboard covers the lower half of every form, and
+          the field being typed into is one of the ones it covers. */}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        {/* On an iPad a full-width form is a single line of text stretched
+            across 10 inches. Cap it and centre it; the gutters take the same
+            background so it reads as a page, not a floating panel. */}
+        <View style={[styles.column, { paddingBottom: insets.bottom }]}>
+          {step === 0 && (
+            <AboutYou data={data} onChange={update} onNext={nextStep} />
+          )}
+          {step === 1 && (
+            <PartnerChildren data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
+          )}
+          {step === 2 && (
+            <Executors data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
+          )}
+          {step === 3 && (
+            <Guardians data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
+          )}
+          {step === 4 && (
+            <SpecificGifts data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
+          )}
+          {step === 5 && (
+            <ResiduaryEstate data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
+          )}
+          {step === 6 && (
+            <FuneralWishes data={data} onChange={update} onNext={nextStep} onBack={prevStep} />
+          )}
+          {step === 7 && (
+            <Review
+              data={data}
+              onEdit={goToStep}
+              onBack={prevStep}
+              onRestart={restart}
+              hasGuardianStep={needsGuardians}
+            />
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
+export default function App() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    hydrateStorage().then(() => setReady(true));
+  }, []);
+
+  return (
+    <SafeAreaProvider>
+      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      {ready ? (
+        <Wizard />
+      ) : (
+        // Same navy as the splash screen, so the handover is invisible rather
+        // than a white flash between the two.
+        <View style={styles.loading}>
+          <ActivityIndicator color="#FFFFFF" />
+        </View>
+      )}
+    </SafeAreaProvider>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#1B3A6B',
+    backgroundColor: C.background,
+  },
+  flex: {
+    flex: 1,
+  },
+  column: {
+    flex: 1,
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  loading: {
+    flex: 1,
+    backgroundColor: C.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
