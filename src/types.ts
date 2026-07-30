@@ -15,11 +15,22 @@ export interface Guardian {
   address: string;
 }
 
+export type GiftSubstitutionType = 'residue' | 'named';
+
 export interface SpecificGift {
   id: string;
   recipient: string;
   description: string;
   isCharity: boolean;
+  substitutionType: GiftSubstitutionType;
+  substitutionRecipient: string;
+}
+
+export type SubstitutionType = 'per-stirpes' | 'named' | 'pro-rata';
+
+export interface BeneficiarySubstitution {
+  type: SubstitutionType;
+  namedPerson: string;
 }
 
 export interface Beneficiary {
@@ -27,6 +38,9 @@ export interface Beneficiary {
   name: string;
   relationship: string;
   percentage: string;
+  isOwnChild: boolean;
+  isMinor: boolean;
+  substitution: BeneficiarySubstitution;
 }
 
 export type MaritalStatus = 'single' | 'married' | 'civilPartnership' | 'divorced' | 'widowed' | '';
@@ -51,7 +65,7 @@ export interface WillData {
   specificGifts: SpecificGift[];
 
   beneficiaries: Beneficiary[];
-  residuaryBackup: string;
+  ultimateBackstop: string;
 
   funeralWishes: string;
   burialPreference: BurialPreference;
@@ -71,7 +85,7 @@ export const EMPTY_WILL: WillData = {
   guardians: [],
   specificGifts: [],
   beneficiaries: [],
-  residuaryBackup: '',
+  ultimateBackstop: '',
   funeralWishes: '',
   burialPreference: '',
 };

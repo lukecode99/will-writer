@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
-import { WillData } from '../types';
+import { WillData, Beneficiary } from '../types';
 import { C, shared } from './shared';
 
 interface Props {
@@ -44,6 +44,36 @@ function Section({
   );
 }
 
+function proRataResult(
+  beneficiaries: Beneficiary[],
+  deceasedId: string,
+): Array<{ name: string; pct: number }> {
+  const survivors = beneficiaries.filter(b => b.id !== deceasedId && (parseFloat(b.percentage) || 0) > 0);
+  const total = survivors.reduce((s, b) => s + (parseFloat(b.percentage) || 0), 0);
+  if (total === 0 || survivors.length === 0) return [];
+  return survivors.map(b => ({
+    name: b.name || '(unnamed)',
+    pct: ((parseFloat(b.percentage) || 0) / total) * 100,
+  }));
+}
+
+function whatIfOutcome(b: Beneficiary, allBens: Beneficiary[]): string {
+  const sub = b.substitution;
+  switch (sub.type) {
+    case 'per-stirpes':
+      return `${b.name}'s children inherit equally (per stirpes)`;
+    case 'named':
+      return sub.namedPerson
+        ? `Passes to ${sub.namedPerson}`
+        : 'Named recipient (not yet specified)';
+    case 'pro-rata': {
+      const others = proRataResult(allBens, b.id);
+      if (others.length === 0) return 'No other beneficiaries';
+      return others.map(o => `${o.name}: ${o.pct.toFixed(1)}%`).join(', ');
+    }
+  }
+}
+
 export default function Review({ data, onEdit, onBack, onRestart, hasGuardianStep }: Props) {
   const [generating, setGenerating] = useState(false);
 
@@ -70,14 +100,12 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
   }
 
   async function handlePrintService() {
-    // v1-stub: same as download for now
     alert('Sending to print service — downloading your PDF now.\n\n(Print dispatch will be wired in a future update.)');
     await handleGenerate();
   }
 
-  const statusLine = (label: string, hasValue: boolean) => (
-    hasValue ? `✓ ${label}` : `— ${label} (not set)`
-  );
+  const subTypeLabel = (type: string) =>
+    type === 'per-stirpes' ? 'Children (per stirpes)' : type === 'named' ? 'Named person' : 'Pro-rata among survivors';
 
   return (
     <ScrollView contentContainerStyle={shared.scrollContent}>
@@ -106,12 +134,8 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
 
       <Section title="Executors" step={2} onEdit={onEdit}>
         <Row label="Primary" value={data.primaryExecutor.name} />
-        {data.secondaryExecutor.name
-          ? <Row label="Secondary" value={data.secondaryExecutor.name} />
-          : null}
-        {data.backupExecutor.name
-          ? <Row label="Backup" value={data.backupExecutor.name} />
-          : null}
+        {data.secondaryExecutor.name ? <Row label="Secondary" value={data.secondaryExecutor.name} /> : null}
+        {data.backupExecutor.name ? <Row label="Backup" value={data.backupExecutor.name} /> : null}
       </Section>
 
       {hasGuardianStep ? (
@@ -129,7 +153,15 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
         {data.specificGifts.length === 0
           ? <Text style={styles.empty}>No specific gifts</Text>
           : data.specificGifts.map((g, i) => (
-            <Row key={g.id} label={`Gift ${i + 1}`} value={`${g.description} → ${g.recipient}${g.isCharity ? ' (charity)' : ''}`} />
+            <View key={g.id}>
+              <Row label={`Gift ${i + 1}`} value={`${g.description} → ${g.recipient}${g.isCharity ? ' (charity)' : ''}`} />
+              <Row
+                label="If recipient dies"
+                value={g.substitutionType === 'named' && g.substitutionRecipient
+                  ? `Passes to ${g.substitutionRecipient}`
+                  : 'Falls into residuary estate'}
+              />
+            </View>
           ))
         }
       </Section>
@@ -137,19 +169,44 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
       <Section title="Residuary Estate" step={hasGuardianStep ? 5 : 4} onEdit={onEdit}>
         {data.beneficiaries.length === 0
           ? <Text style={styles.empty}>No beneficiaries added</Text>
-          : data.beneficiaries.map((b, i) => (
-            <Row key={b.id} label={b.name} value={`${b.percentage}%${b.relationship ? ` (${b.relationship})` : ''}`} />
+          : data.beneficiaries.map(b => (
+            <Row
+              key={b.id}
+              label={b.name || '(unnamed)'}
+              value={`${b.percentage}%${b.relationship ? ` (${b.relationship})` : ''}${b.isMinor ? ' · minor' : ''}`}
+            />
           ))
         }
-        {data.residuaryBackup
-          ? <Row label="Backup" value={data.residuaryBackup} />
-          : null}
+        {data.ultimateBackstop
+          ? <Row label="If nobody survives" value={data.ultimateBackstop} />
+          : <Text style={styles.empty}>No ultimate backstop set (intestacy applies)</Text>
+        }
       </Section>
 
+      {data.beneficiaries.length > 0 && (
+        <View style={styles.whatIfPanel}>
+          <Text style={styles.whatIfTitle}>What happens if a beneficiary predeceases you?</Text>
+          {data.beneficiaries.map(b => (
+            <View key={b.id} style={styles.whatIfRow}>
+              <Text style={styles.whatIfName}>
+                {b.name || '(unnamed)'} ({b.percentage}%)
+              </Text>
+              <Text style={styles.whatIfSub}>
+                {subTypeLabel(b.substitution.type)} → {whatIfOutcome(b, data.beneficiaries)}
+              </Text>
+            </View>
+          ))}
+          {data.ultimateBackstop ? (
+            <View style={[styles.whatIfRow, { borderTopWidth: 1, borderTopColor: C.border, marginTop: 8, paddingTop: 8 }]}>
+              <Text style={styles.whatIfName}>If no one survives</Text>
+              <Text style={styles.whatIfSub}>{data.ultimateBackstop}</Text>
+            </View>
+          ) : null}
+        </View>
+      )}
+
       <Section title="Funeral Wishes" step={hasGuardianStep ? 6 : 5} onEdit={onEdit}>
-        {data.burialPreference
-          ? <Row label="Preference" value={data.burialPreference} />
-          : null}
+        {data.burialPreference ? <Row label="Preference" value={data.burialPreference} /> : null}
         {data.funeralWishes
           ? <Row label="Wishes" value={data.funeralWishes} />
           : <Text style={styles.empty}>No funeral wishes recorded</Text>}
@@ -227,7 +284,7 @@ const styles = StyleSheet.create({
   rowLabel: {
     fontSize: 13,
     color: C.textLight,
-    width: 100,
+    width: 120,
     flexShrink: 0,
   },
   rowValue: {
@@ -241,6 +298,33 @@ const styles = StyleSheet.create({
     color: C.textLight,
     fontStyle: 'italic',
     paddingVertical: 4,
+  },
+  whatIfPanel: {
+    backgroundColor: '#F0F4FF',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#C7D5F0',
+  },
+  whatIfTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E3A8A',
+    marginBottom: 10,
+  },
+  whatIfRow: {
+    marginBottom: 8,
+  },
+  whatIfName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.text,
+  },
+  whatIfSub: {
+    fontSize: 12,
+    color: C.textLight,
+    marginTop: 2,
   },
   disclaimer: {
     backgroundColor: '#FFF3CD',

@@ -1,13 +1,40 @@
-import { WillData, EMPTY_WILL } from './types';
+import { WillData, EMPTY_WILL, Beneficiary, SpecificGift, SubstitutionType } from './types';
 
 const KEY = 'willWriter.v1';
+
+function normalizeBeneficiary(b: any): Beneficiary {
+  return {
+    id: b.id || Math.random().toString(36).slice(2),
+    name: b.name || '',
+    relationship: b.relationship || '',
+    percentage: b.percentage || '',
+    isOwnChild: b.isOwnChild ?? false,
+    isMinor: b.isMinor ?? false,
+    substitution: b.substitution || { type: 'per-stirpes' as SubstitutionType, namedPerson: '' },
+  };
+}
+
+function normalizeGift(g: any): SpecificGift {
+  return {
+    id: g.id || Math.random().toString(36).slice(2),
+    recipient: g.recipient || '',
+    description: g.description || '',
+    isCharity: g.isCharity ?? false,
+    substitutionType: g.substitutionType || 'residue',
+    substitutionRecipient: g.substitutionRecipient || '',
+  };
+}
 
 export function loadWillData(): WillData {
   try {
     if (typeof window === 'undefined') return { ...EMPTY_WILL };
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return { ...EMPTY_WILL };
-    return { ...EMPTY_WILL, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    const merged: WillData = { ...EMPTY_WILL, ...parsed };
+    merged.beneficiaries = (merged.beneficiaries || []).map(normalizeBeneficiary);
+    merged.specificGifts = (merged.specificGifts || []).map(normalizeGift);
+    return merged;
   } catch {
     return { ...EMPTY_WILL };
   }

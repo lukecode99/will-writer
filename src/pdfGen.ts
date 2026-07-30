@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from 'pdf-lib';
-import { WillData } from './types';
+import { WillData, Beneficiary } from './types';
 
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
@@ -112,6 +112,58 @@ function sigBlock(ctx: DrawCtx, label: string, fields: string[]): DrawCtx {
   return gap(c, 8);
 }
 
+function proRataShares(
+  bens: Beneficiary[],
+  deceasedId: string,
+): Array<{ name: string; pct: number }> {
+  const survivors = bens.filter(b => b.id !== deceasedId && (parseFloat(b.percentage) || 0) > 0);
+  const total = survivors.reduce((s, b) => s + (parseFloat(b.percentage) || 0), 0);
+  if (total === 0 || survivors.length === 0) return [];
+  return survivors.map(b => ({
+    name: b.name,
+    pct: ((parseFloat(b.percentage) || 0) / total) * 100,
+  }));
+}
+
+function substitutionClause(b: Beneficiary, allBens: Beneficiary[]): string {
+  const pct = b.percentage || '?';
+  const sub = b.substitution || { type: 'per-stirpes', namedPerson: '' };
+  const namePoss = `${b.name}'s`;
+
+  if (sub.type === 'per-stirpes') {
+    return (
+      `If ${b.name} (${pct}%) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
+      `in equal shares to ${namePoss} children then living; if any such child has predeceased ${b.name} ` +
+      `leaving children of their own, those grandchildren shall take their parent's share equally ` +
+      `(per stirpes); and if ${b.name} leaves no children or issue surviving me, ${namePoss} share shall ` +
+      `be divided among the other surviving residuary beneficiaries in proportion to their respective shares.`
+    );
+  }
+
+  if (sub.type === 'named') {
+    const named = sub.namedPerson || '[named substitute]';
+    return (
+      `If ${b.name} (${pct}%) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
+      `to ${named} absolutely.`
+    );
+  }
+
+  // pro-rata
+  const others = proRataShares(allBens, b.id);
+  if (others.length === 0) {
+    return (
+      `If ${b.name} (${pct}%) shall fail to survive me by 30 days, ${namePoss} share shall be ` +
+      `divided among the other surviving residuary beneficiaries in proportion to their respective shares.`
+    );
+  }
+  const examples = others.map(o => `${o.name} (${o.pct.toFixed(1)}%)`).join(', ');
+  return (
+    `If ${b.name} (${pct}%) shall fail to survive me by 30 days, ${namePoss} share shall be divided ` +
+    `among the other surviving residuary beneficiaries in proportion to their respective shares under this Will ` +
+    `(so that, by way of example: ${examples}).`
+  );
+}
+
 export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.TimesRoman);
@@ -151,7 +203,7 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
 
   const exec1 = data.primaryExecutor;
   const exec2 = data.secondaryExecutor;
-  const backup = data.backupExecutor;
+  const backupExec = data.backupExecutor;
 
   ctx = drawText(ctx,
     `I appoint ${exec1.name || '[Primary Executor]'}${exec1.address ? ' of ' + exec1.address : ''} ` +
@@ -166,11 +218,11 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
       { size: 11 });
   }
 
-  if (backup.name) {
+  if (backupExec.name) {
     ctx = gap(ctx, 4);
     ctx = drawText(ctx,
       `In the event that neither of the foregoing Executors is able or willing to act, ` +
-      `I appoint ${backup.name}${backup.address ? ' of ' + backup.address : ''} as substitute Executor.`,
+      `I appoint ${backupExec.name}${backupExec.address ? ' of ' + backupExec.address : ''} as substitute Executor.`,
       { size: 11 });
   }
 
@@ -197,20 +249,37 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
 
     for (let i = 0; i < data.specificGifts.length; i++) {
       const gift = data.specificGifts[i];
+      const letter = String.fromCharCode(97 + i);
+
+      let giftClause: string;
       if (gift.isCharity) {
-        ctx = drawText(ctx,
-          `${String.fromCharCode(97 + i)}) I give ${gift.description} to ${gift.recipient} ` +
-          `(a registered charity) free of inheritance tax, to be applied for its general purposes.`,
-          { size: 11 });
+        giftClause =
+          `${letter}) I give ${gift.description} to ${gift.recipient} ` +
+          `(a registered charity) free of inheritance tax, to be applied for its general purposes.`;
       } else {
-        ctx = drawText(ctx,
-          `${String.fromCharCode(97 + i)}) I give ${gift.description} to ${gift.recipient} ` +
-          `free of inheritance tax, absolutely.`,
-          { size: 11 });
+        giftClause =
+          `${letter}) I give ${gift.description} to ${gift.recipient} ` +
+          `free of inheritance tax, absolutely.`;
       }
-      ctx = gap(ctx, 4);
+
+      // Substitution clause for the gift
+      let failClause: string;
+      if (gift.substitutionType === 'named' && gift.substitutionRecipient) {
+        failClause =
+          `If ${gift.recipient} shall fail to survive me by 30 days, this gift shall pass to ` +
+          `${gift.substitutionRecipient} absolutely.`;
+      } else {
+        failClause =
+          `If ${gift.recipient} shall fail to survive me by 30 days, this gift shall fall into ` +
+          `and form part of my residuary estate.`;
+      }
+
+      ctx = drawText(ctx, giftClause, { size: 11 });
+      ctx = gap(ctx, 2);
+      ctx = drawText(ctx, `   ${failClause}`, { size: 11, indent: 16 });
+      ctx = gap(ctx, 6);
     }
-    ctx = gap(ctx, 10);
+    ctx = gap(ctx, 8);
   }
 
   // ── Residuary ──────────────────────────────────────────────────────────────
@@ -226,16 +295,79 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
 
   for (const b of data.beneficiaries) {
     ctx = drawText(ctx,
-      `• ${b.name}${b.relationship ? ' (' + b.relationship + ')' : ''} — ${b.percentage}%`,
+      `• ${b.name}${b.relationship ? ' (' + b.relationship + ')' : ''} — ${b.percentage}%` +
+      `${b.isMinor ? ' (held on trust until age 18)' : ''}`,
       { size: 11, indent: 16 });
   }
 
-  if (data.residuaryBackup) {
-    ctx = gap(ctx, 6);
+  ctx = gap(ctx, 10);
+
+  // ── Survivorship (always emitted) ──────────────────────────────────────────
+  ctx = drawText(ctx, 'SURVIVORSHIP AND SUBSTITUTION', { font: bold, size: 10 });
+  ctx = gap(ctx, 4);
+  ctx = drawText(ctx,
+    `Each beneficiary must survive me by 30 days to benefit under this clause. ` +
+    `In the event that any beneficiary fails so to survive me:`,
+    { size: 11 });
+  ctx = gap(ctx, 6);
+
+  for (let i = 0; i < data.beneficiaries.length; i++) {
+    const b = data.beneficiaries[i];
+    const letter = String.fromCharCode(97 + i);
     ctx = drawText(ctx,
-      `If any beneficiary shall fail to survive me by 30 days, their share shall pass to: ${data.residuaryBackup}.`,
+      `(${letter}) ${substitutionClause(b, data.beneficiaries)}`,
+      { size: 11, indent: 16 });
+    ctx = gap(ctx, 6);
+  }
+
+  // ── Ultimate backstop ─────────────────────────────────────────────────────
+  ctx = gap(ctx, 4);
+  if (data.ultimateBackstop) {
+    ctx = drawText(ctx,
+      `If no residuary beneficiary or their substituted beneficiary shall survive me by 30 days, ` +
+      `my residuary estate shall pass to ${data.ultimateBackstop} absolutely.`,
+      { size: 11 });
+  } else {
+    ctx = drawText(ctx,
+      `If no residuary beneficiary or their substituted beneficiary shall survive me by 30 days, ` +
+      `my residuary estate shall pass in accordance with the laws of intestacy as if I had died without a Will.`,
       { size: 11 });
   }
+
+  // ── Trusts for minor beneficiaries ────────────────────────────────────────
+  const minorBens = data.beneficiaries.filter(b => b.isMinor);
+  if (minorBens.length > 0) {
+    ctx = gap(ctx, 10);
+    ctx = drawText(ctx, 'TRUSTS FOR MINOR BENEFICIARIES', { font: bold, size: 10 });
+    ctx = gap(ctx, 4);
+    const minorNames = minorBens.map(b => b.name).join(' and ');
+    ctx = drawText(ctx,
+      `Any share of my residuary estate passing to a beneficiary (including ${minorNames}) who has not ` +
+      `attained the age of 18 years at the date of my death shall be held by my Executors as trustees on ` +
+      `the following trusts:`,
+      { size: 11 });
+    ctx = gap(ctx, 4);
+    ctx = drawText(ctx,
+      `(a) The share shall be retained and held until such beneficiary attains the age of 18 years or ` +
+      `dies before that age.`,
+      { size: 11, indent: 16 });
+    ctx = gap(ctx, 4);
+    ctx = drawText(ctx,
+      `(b) During the period of the trust, my Executors shall have full power to apply any income or ` +
+      `capital of the share for the maintenance, education or benefit of such beneficiary.`,
+      { size: 11, indent: 16 });
+    ctx = gap(ctx, 4);
+    ctx = drawText(ctx,
+      `(c) On attaining the age of 18 years, the capital and any accumulated income shall be paid or ` +
+      `transferred to such beneficiary absolutely.`,
+      { size: 11, indent: 16 });
+    ctx = gap(ctx, 4);
+    ctx = drawText(ctx,
+      `(d) If such beneficiary dies before attaining the age of 18, their share shall pass in accordance ` +
+      `with the substitution provisions set out above.`,
+      { size: 11, indent: 16 });
+  }
+
   ctx = gap(ctx, 14);
 
   // ── Funeral Wishes ─────────────────────────────────────────────────────────
@@ -292,7 +424,7 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   });
   ctx = gap(ctx, 16);
 
-  const instructions = [
+  const instructions: [string, string][] = [
     ['1. Arrange to sign in person',
      'You must sign your Will in the physical presence of BOTH witnesses at the same time.'],
     ['2. Choose your witnesses carefully',
