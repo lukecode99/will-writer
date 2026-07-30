@@ -27,7 +27,34 @@ function ensureSpace(ctx: DrawCtx, needed: number): DrawCtx {
   return ctx;
 }
 
-function wrapText(text: string, font: PDFFont, size: number, maxW: number): string[] {
+// The standard PDF fonts are WinAnsi-encoded and pdf-lib throws on any character
+// outside that repertoire — including the newline you get by pressing Enter in a
+// multiline address or funeral-wishes box, and any emoji. One such character
+// anywhere in the will used to abort the entire PDF, so every string is
+// sanitised before it reaches the page.
+const CHAR_SUBSTITUTIONS: Array<[RegExp, string]> = [
+  [/\r\n?/g, '\n'],
+  [/\t/g, ' '],
+  [/[‘’‛]/g, "'"],
+  [/[“”‟]/g, '"'],
+  [/[‐‑]/g, '-'],
+  [/…/g, '...'],
+  [/ /g, ' '],
+];
+
+// WinAnsi covers Latin-1 plus a handful of typographic extras in 0x80-0x9F.
+const WINANSI_EXTRAS =
+  '€‚ƒ„†‡ˆ‰Š‹ŒŽ' +
+  '‘’“”•–—˜™š›œžŸ';
+const UNENCODABLE = new RegExp(`[^\\n -~\\u00A1-\\u00FF${WINANSI_EXTRAS}]`, 'g');
+
+export function sanitizeForPdf(text: unknown): string {
+  let out = String(text ?? '');
+  for (const [pattern, replacement] of CHAR_SUBSTITUTIONS) out = out.replace(pattern, replacement);
+  return out.replace(UNENCODABLE, '');
+}
+
+function wrapParagraph(text: string, font: PDFFont, size: number, maxW: number): string[] {
   const words = text.split(' ');
   const lines: string[] = [];
   let line = '';
@@ -42,6 +69,26 @@ function wrapText(text: string, font: PDFFont, size: number, maxW: number): stri
   }
   if (line) lines.push(line);
   return lines;
+}
+
+// A user's line breaks are kept as line breaks rather than being flattened into
+// the wrapped text, so a multiline address still reads as an address.
+function wrapText(text: string, font: PDFFont, size: number, maxW: number): string[] {
+  return sanitizeForPdf(text)
+    .split('\n')
+    .flatMap(paragraph => (paragraph.trim() ? wrapParagraph(paragraph, font, size, maxW) : ['']));
+}
+
+// Addresses are entered in a multiline box, so they arrive with line breaks.
+// Those read correctly as a standalone block, but a clause reading "I, X, of 22
+// Castleton Road / Ruislip / HA4 9QJ, hereby revoke..." does not — mid-sentence
+// they become commas.
+function inlineAddress(address: string): string {
+  return sanitizeForPdf(address)
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join(', ');
 }
 
 function drawText(
@@ -192,7 +239,7 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   ctx = drawText(ctx, 'REVOCATION OF PRIOR WILLS', { font: bold, size: 11 });
   ctx = gap(ctx, 4);
   ctx = drawText(ctx,
-    'I, ' + data.fullName + ', of ' + data.address + ', hereby revoke all former Wills and ' +
+    'I, ' + data.fullName + ', of ' + inlineAddress(data.address) + ', hereby revoke all former Wills and ' +
     'codicils previously made by me and declare this to be my last Will.',
     { size: 11 });
   ctx = gap(ctx, 14);
@@ -206,14 +253,14 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   const backupExec = data.backupExecutor;
 
   ctx = drawText(ctx,
-    `I appoint ${exec1.name || '[Primary Executor]'}${exec1.address ? ' of ' + exec1.address : ''} ` +
+    `I appoint ${exec1.name || '[Primary Executor]'}${exec1.address ? ' of ' + inlineAddress(exec1.address) : ''} ` +
     `to be the Executor of this my Will.`,
     { size: 11 });
 
   if (exec2.name) {
     ctx = gap(ctx, 4);
     ctx = drawText(ctx,
-      `I also appoint ${exec2.name}${exec2.address ? ' of ' + exec2.address : ''} ` +
+      `I also appoint ${exec2.name}${exec2.address ? ' of ' + inlineAddress(exec2.address) : ''} ` +
       `to be Executor jointly with or as a substitute for the above.`,
       { size: 11 });
   }
@@ -222,7 +269,7 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
     ctx = gap(ctx, 4);
     ctx = drawText(ctx,
       `In the event that neither of the foregoing Executors is able or willing to act, ` +
-      `I appoint ${backupExec.name}${backupExec.address ? ' of ' + backupExec.address : ''} as substitute Executor.`,
+      `I appoint ${backupExec.name}${backupExec.address ? ' of ' + inlineAddress(backupExec.address) : ''} as substitute Executor.`,
       { size: 11 });
   }
 
@@ -232,7 +279,7 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   if (data.guardians.length > 0) {
     ctx = drawText(ctx, '2. APPOINTMENT OF GUARDIANS', { font: bold, size: 11 });
     ctx = gap(ctx, 4);
-    const gNames = data.guardians.map(g => g.name + (g.address ? ' of ' + g.address : '')).join(' and ');
+    const gNames = data.guardians.map(g => g.name + (g.address ? ' of ' + inlineAddress(g.address) : '')).join(' and ');
     ctx = drawText(ctx,
       `In the event of my death while any of my children are under the age of 18 years, ` +
       `I appoint ${gNames} to be the guardian(s) of my minor children.`,
