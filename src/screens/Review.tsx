@@ -2,6 +2,13 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { WillData, Beneficiary } from '../types';
 import { C, shared } from './shared';
+// Imported statically on purpose. This was briefly a dynamic import() to keep a
+// pdf-lib load failure off the startup path, but `expo export --platform web`
+// splits the chunk out without emitting a loader for it, so the require failed
+// with "Requiring unknown module" and the PDF could never be generated. The
+// underlying tslib problem is fixed properly by the resolver alias in
+// metro.config.js, so the lazy load bought nothing.
+import { generateWillPdf } from '../pdfGen';
 
 interface Props {
   data: WillData;
@@ -80,7 +87,6 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
   async function handleGenerate() {
     setGenerating(true);
     try {
-      const { generateWillPdf } = await import('../pdfGen');
       const bytes = await generateWillPdf(data);
       const blob = new Blob([bytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
