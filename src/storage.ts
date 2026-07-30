@@ -20,6 +20,10 @@ function normalizeGift(g: any): SpecificGift {
     recipient: g.recipient || '',
     description: g.description || '',
     isCharity: g.isCharity ?? false,
+    // Drafts saved before the tax choice existed had "free of inheritance tax"
+    // hardcoded onto every gift. They reopen on the safer default instead, and
+    // the user is shown the choice on the Specific Gifts screen.
+    taxBurden: g.taxBurden === 'freeOfTax' ? 'freeOfTax' : 'bearsOwnTax',
     substitutionType: g.substitutionType || 'residue',
     substitutionRecipient: g.substitutionRecipient || '',
   };

@@ -17,11 +17,26 @@ export interface Guardian {
 
 export type GiftSubstitutionType = 'residue' | 'named';
 
+/**
+ * Who bears the inheritance tax attributable to a specific gift.
+ *
+ * 'bearsOwnTax' — the recipient bears it: the gift is reduced by the tax on it.
+ * 'freeOfTax'   — the residuary estate bears it as a testamentary expense
+ *                 (IHTA 1984 s.211). Note that this grosses the tax up, and if
+ *                 residue is exhausted the gift abates anyway (IHTA 1984 s.37;
+ *                 AEA 1925 s.34(3) and First Schedule).
+ *
+ * Older saved drafts predate this field — treat `undefined` as 'bearsOwnTax',
+ * which is the safer default because it leaves residue intact.
+ */
+export type GiftTaxBurden = 'bearsOwnTax' | 'freeOfTax';
+
 export interface SpecificGift {
   id: string;
   recipient: string;
   description: string;
   isCharity: boolean;
+  taxBurden: GiftTaxBurden;
   substitutionType: GiftSubstitutionType;
   substitutionRecipient: string;
 }

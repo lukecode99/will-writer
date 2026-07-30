@@ -18,6 +18,43 @@ function totalPct(beneficiaries: Beneficiary[]): number {
   return beneficiaries.reduce((s, b) => s + (parseFloat(b.percentage) || 0), 0);
 }
 
+/**
+ * Percentages are digits only, 1–100, at most two decimal places.
+ *
+ * Free text used to get through: "half" parsed to 0 via `parseFloat || 0`, so a
+ * 100 + "half" pair summed to exactly 100, passed the total check, and printed
+ * "half%" into the signed document. Constrain at the keystroke instead.
+ */
+function sanitisePct(raw: string): string {
+  let s = raw.replace(/[^0-9.]/g, '');
+
+  // Keep only the first decimal point.
+  const firstDot = s.indexOf('.');
+  if (firstDot !== -1) {
+    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, '');
+  }
+
+  const [intRaw, decRaw] = s.split('.');
+  // Strip leading zeros ("007" -> "7") but keep a lone "0" so "0.5" is typable.
+  let intPart = intRaw.replace(/^0+(?=\d)/, '').slice(0, 3);
+  s = decRaw === undefined ? intPart : `${intPart}.${decRaw.slice(0, 2)}`;
+
+  const n = parseFloat(s);
+  if (!isNaN(n) && n > 100) return '100';
+  return s;
+}
+
+/** Returns an error string for a share that can't go in a will, or '' if it's fine. */
+function pctError(raw: string): string {
+  const s = raw.trim();
+  if (s === '') return 'Enter a share between 1 and 100.';
+  const n = parseFloat(s);
+  if (isNaN(n)) return 'Enter a number between 1 and 100.';
+  if (n < 1) return 'Shares must be at least 1%.';
+  if (n > 100) return 'Shares cannot be more than 100%.';
+  return '';
+}
+
 function proRataResult(
   beneficiaries: Beneficiary[],
   deceasedId: string,
@@ -33,22 +70,23 @@ function proRataResult(
 
 function previewText(b: Beneficiary, allBens: Beneficiary[]): string {
   const name = b.name || 'this person';
-  const pct = b.percentage || '?';
+  // Reads as "their 40% share" once a figure is entered, "their share" until then.
+  const pct = b.percentage.trim() ? `${b.percentage.trim()}% ` : '';
   const sub = b.substitution;
   switch (sub.type) {
     case 'per-stirpes':
-      return `If ${name} dies before you, their ${pct}% passes equally to their own children (per stirpes). If they have no children, the share is divided among the other surviving beneficiaries.`;
+      return `If ${name} dies before you, their ${pct}share passes equally to their own children (per stirpes). If they have no children, the share is divided among the other surviving beneficiaries.`;
     case 'named': {
       const target = sub.namedPerson || '(name not yet entered)';
-      return `If ${name} dies before you, their ${pct}% passes to ${target}.`;
+      return `If ${name} dies before you, their ${pct}share passes to ${target}.`;
     }
     case 'pro-rata': {
       const others = proRataResult(allBens, b.id);
       if (others.length === 0) {
-        return `If ${name} dies before you, their ${pct}% would go to surviving co-beneficiaries — but there are none yet.`;
+        return `If ${name} dies before you, their ${pct}share would go to surviving co-beneficiaries — but there are none yet.`;
       }
       const parts = others.map(o => `${o.name} (${o.pct.toFixed(1)}%)`).join(', ');
-      return `If ${name} dies before you, their ${pct}% is divided pro-rata among the other beneficiaries: ${parts}.`;
+      return `If ${name} dies before you, their ${pct}share is divided pro-rata among the other beneficiaries: ${parts}.`;
     }
   }
 }
@@ -107,6 +145,15 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
       alert('Add at least one beneficiary for your residuary estate.');
       return;
     }
+    // Check each share on its own before the total — otherwise a junk entry that
+    // parses to 0 can be masked by the others still summing to 100.
+    for (let i = 0; i < data.beneficiaries.length; i++) {
+      const err = pctError(data.beneficiaries[i].percentage);
+      if (err) {
+        alert(`Beneficiary ${i + 1}${data.beneficiaries[i].name ? ` (${data.beneficiaries[i].name})` : ''}: ${err}`);
+        return;
+      }
+    }
     if (!totalOk) {
       alert(`Percentages must add up to 100%. Currently: ${total.toFixed(1)}%`);
       return;
@@ -150,12 +197,17 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
 
           <Text style={shared.label}>Share (%)</Text>
           <TextInput
-            style={shared.input}
+            style={[shared.input, pctError(b.percentage) && b.percentage.trim() !== '' ? styles.inputError : null]}
             placeholder="e.g. 50"
             value={b.percentage}
-            onChangeText={v => updateBen(b.id, { percentage: v })}
+            onChangeText={v => updateBen(b.id, { percentage: sanitisePct(v) })}
             keyboardType="decimal-pad"
+            inputMode="decimal"
+            maxLength={6}
           />
+          {b.percentage.trim() !== '' && pctError(b.percentage) !== '' && (
+            <Text style={styles.errorText}>{pctError(b.percentage)}</Text>
+          )}
 
           <View style={styles.toggleRow}>
             <Switch
@@ -271,6 +323,14 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
 }
 
 const styles = StyleSheet.create({
+  inputError: {
+    borderColor: C.danger,
+  },
+  errorText: {
+    color: C.danger,
+    fontSize: 12.5,
+    marginTop: 4,
+  },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',

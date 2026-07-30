@@ -54,6 +54,45 @@ export function sanitizeForPdf(text: unknown): string {
   return out.replace(UNENCODABLE, '');
 }
 
+/**
+ * An unfilled field must be visible in the document, never silently absent.
+ *
+ * A missing name used to render as nothing at all — "I give  to  free of
+ * inheritance tax, absolutely." — which still reads as finished prose and is
+ * easy to sign without noticing. Every user-supplied value that reaches the
+ * page goes through here, so a blank shows up as an obvious bracketed marker.
+ */
+function field(value: unknown, marker: string): string {
+  const s = sanitizeForPdf(value).trim();
+  return s === '' ? `[${marker.toUpperCase()}]` : s;
+}
+
+/**
+ * A share as it should read in the document: "40%" when entered, an explicit
+ * marker when not. Never print a bare "%" or a value that isn't a number —
+ * free text used to reach the page as "half%".
+ */
+function pctLabel(raw: unknown): string {
+  const s = sanitizeForPdf(raw).trim();
+  const n = parseFloat(s);
+  if (s === '' || isNaN(n)) return '[SHARE NOT SPECIFIED]';
+  return `${s}%`;
+}
+
+/**
+ * Gift labels run a), b), ... z), then aa), ab), ... — `String.fromCharCode(97 + i)`
+ * alone ran off the end of the alphabet and lettered the 27th gift "{".
+ */
+function giftLetter(i: number): string {
+  let n = i;
+  let out = '';
+  do {
+    out = String.fromCharCode(97 + (n % 26)) + out;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return out;
+}
+
 function wrapParagraph(text: string, font: PDFFont, size: number, maxW: number): string[] {
   const words = text.split(' ');
   const lines: string[] = [];
@@ -159,55 +198,36 @@ function sigBlock(ctx: DrawCtx, label: string, fields: string[]): DrawCtx {
   return gap(c, 8);
 }
 
-function proRataShares(
-  bens: Beneficiary[],
-  deceasedId: string,
-): Array<{ name: string; pct: number }> {
-  const survivors = bens.filter(b => b.id !== deceasedId && (parseFloat(b.percentage) || 0) > 0);
-  const total = survivors.reduce((s, b) => s + (parseFloat(b.percentage) || 0), 0);
-  if (total === 0 || survivors.length === 0) return [];
-  return survivors.map(b => ({
-    name: b.name,
-    pct: ((parseFloat(b.percentage) || 0) / total) * 100,
-  }));
-}
-
-function substitutionClause(b: Beneficiary, allBens: Beneficiary[]): string {
-  const pct = b.percentage || '?';
+function substitutionClause(b: Beneficiary): string {
+  const pct = pctLabel(b.percentage);
   const sub = b.substitution || { type: 'per-stirpes', namedPerson: '' };
-  const namePoss = `${b.name}'s`;
+  const name = field(b.name, 'beneficiary name missing');
+  const namePoss = `${name}'s`;
 
   if (sub.type === 'per-stirpes') {
     return (
-      `If ${b.name} (${pct}%) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
-      `in equal shares to ${namePoss} children then living; if any such child has predeceased ${b.name} ` +
+      `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
+      `in equal shares to ${namePoss} children then living; if any such child has predeceased ${name} ` +
       `leaving children of their own, those grandchildren shall take their parent's share equally ` +
-      `(per stirpes); and if ${b.name} leaves no children or issue surviving me, ${namePoss} share shall ` +
+      `(per stirpes); and if ${name} leaves no children or issue surviving me, ${namePoss} share shall ` +
       `be divided among the other surviving residuary beneficiaries in proportion to their respective shares.`
     );
   }
 
   if (sub.type === 'named') {
-    const named = sub.namedPerson || '[named substitute]';
+    const named = field(sub.namedPerson, 'substitute name missing');
     return (
-      `If ${b.name} (${pct}%) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
+      `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
       `to ${named} absolutely.`
     );
   }
 
-  // pro-rata
-  const others = proRataShares(allBens, b.id);
-  if (others.length === 0) {
-    return (
-      `If ${b.name} (${pct}%) shall fail to survive me by 30 days, ${namePoss} share shall be ` +
-      `divided among the other surviving residuary beneficiaries in proportion to their respective shares.`
-    );
-  }
-  const examples = others.map(o => `${o.name} (${o.pct.toFixed(1)}%)`).join(', ');
+  // pro-rata. The operative words do the work; a worked example based on the
+  // current shares was dropped — it duplicated the provision in looser language
+  // and had no place in the operative part of a will.
   return (
-    `If ${b.name} (${pct}%) shall fail to survive me by 30 days, ${namePoss} share shall be divided ` +
-    `among the other surviving residuary beneficiaries in proportion to their respective shares under this Will ` +
-    `(so that, by way of example: ${examples}).`
+    `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall be ` +
+    `divided among the other surviving residuary beneficiaries in proportion to their respective shares.`
   );
 }
 
@@ -227,8 +247,8 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   ctx = gap(ctx, 20);
   ctx = drawText(ctx, 'LAST WILL AND TESTAMENT', { font: bold, size: 16, center: true });
   ctx = gap(ctx, 6);
-  ctx = drawText(ctx, `of ${data.fullName}`, { font: italic, size: 13, center: true });
-  ctx = drawText(ctx, data.address, { size: 10, color: GRAY, center: true });
+  ctx = drawText(ctx, `of ${field(data.fullName, 'full name missing')}`, { font: italic, size: 13, center: true });
+  ctx = drawText(ctx, field(data.address, 'address missing'), { size: 10, color: GRAY, center: true });
   ctx = gap(ctx, 4);
   ctx = drawText(ctx, `Made this day: ${today}`, { size: 10, color: GRAY, center: true });
   ctx = gap(ctx, 16);
@@ -239,7 +259,8 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   ctx = drawText(ctx, 'REVOCATION OF PRIOR WILLS', { font: bold, size: 11 });
   ctx = gap(ctx, 4);
   ctx = drawText(ctx,
-    'I, ' + data.fullName + ', of ' + inlineAddress(data.address) + ', hereby revoke all former Wills and ' +
+    'I, ' + field(data.fullName, 'full name missing') + ', of ' +
+    field(inlineAddress(data.address), 'address missing') + ', hereby revoke all former Wills and ' +
     'codicils previously made by me and declare this to be my last Will.',
     { size: 11 });
   ctx = gap(ctx, 14);
@@ -253,23 +274,32 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   const backupExec = data.backupExecutor;
 
   ctx = drawText(ctx,
-    `I appoint ${exec1.name || '[Primary Executor]'}${exec1.address ? ' of ' + inlineAddress(exec1.address) : ''} ` +
+    `I appoint ${field(exec1.name, 'primary executor name missing')}` +
+    `${exec1.address.trim() ? ' of ' + inlineAddress(exec1.address) : ''} ` +
     `to be the Executor of this my Will.`,
     { size: 11 });
 
-  if (exec2.name) {
+  if (exec2.name.trim()) {
     ctx = gap(ctx, 4);
     ctx = drawText(ctx,
-      `I also appoint ${exec2.name}${exec2.address ? ' of ' + inlineAddress(exec2.address) : ''} ` +
+      `I also appoint ${sanitizeForPdf(exec2.name).trim()}` +
+      `${exec2.address.trim() ? ' of ' + inlineAddress(exec2.address) : ''} ` +
       `to be Executor jointly with or as a substitute for the above.`,
       { size: 11 });
   }
 
-  if (backupExec.name) {
+  if (backupExec.name.trim()) {
     ctx = gap(ctx, 4);
+    // "neither of the foregoing Executors" only reads correctly when two have
+    // actually been appointed; with one named executor it referred to a person
+    // who isn't in the document.
+    const foregoing = exec2.name.trim()
+      ? 'neither of the foregoing Executors is'
+      : 'the foregoing Executor is not';
     ctx = drawText(ctx,
-      `In the event that neither of the foregoing Executors is able or willing to act, ` +
-      `I appoint ${backupExec.name}${backupExec.address ? ' of ' + inlineAddress(backupExec.address) : ''} as substitute Executor.`,
+      `In the event that ${foregoing} able or willing to act, ` +
+      `I appoint ${sanitizeForPdf(backupExec.name).trim()}` +
+      `${backupExec.address.trim() ? ' of ' + inlineAddress(backupExec.address) : ''} as substitute Executor.`,
       { size: 11 });
   }
 
@@ -279,7 +309,9 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   if (data.guardians.length > 0) {
     ctx = drawText(ctx, '2. APPOINTMENT OF GUARDIANS', { font: bold, size: 11 });
     ctx = gap(ctx, 4);
-    const gNames = data.guardians.map(g => g.name + (g.address ? ' of ' + inlineAddress(g.address) : '')).join(' and ');
+    const gNames = data.guardians
+      .map(g => field(g.name, 'guardian name missing') + (g.address.trim() ? ' of ' + inlineAddress(g.address) : ''))
+      .join(' and ');
     ctx = drawText(ctx,
       `In the event of my death while any of my children are under the age of 18 years, ` +
       `I appoint ${gNames} to be the guardian(s) of my minor children.`,
@@ -296,29 +328,47 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
 
     for (let i = 0; i < data.specificGifts.length; i++) {
       const gift = data.specificGifts[i];
-      const letter = String.fromCharCode(97 + i);
+      const letter = giftLetter(i);
+      const description = field(gift.description, 'gift not described');
+      const recipient = field(gift.recipient, 'recipient name missing');
 
       let giftClause: string;
       if (gift.isCharity) {
+        // A gift to a UK registered charity is exempt (IHTA 1984 s.23), so there
+        // is no attributable tax to allocate either way.
         giftClause =
-          `${letter}) I give ${gift.description} to ${gift.recipient} ` +
-          `(a registered charity) free of inheritance tax, to be applied for its general purposes.`;
-      } else {
+          `${letter}) I give ${description} to ${recipient} ` +
+          `(a registered charity) to be applied for its general purposes, and the receipt of its ` +
+          `treasurer or other proper officer shall be a full discharge to my Executors.`;
+      } else if (gift.taxBurden === 'freeOfTax') {
         giftClause =
-          `${letter}) I give ${gift.description} to ${gift.recipient} ` +
+          `${letter}) I give ${description} to ${recipient} ` +
           `free of inheritance tax, absolutely.`;
+      } else {
+        // Default. Older drafts saved before this choice existed have no
+        // taxBurden at all, and fall here — the option that leaves residue intact.
+        giftClause =
+          `${letter}) I give ${description} to ${recipient} absolutely, ` +
+          `subject to the inheritance tax attributable to this gift.`;
       }
 
-      // Substitution clause for the gift
+      // Substitution clause for the gift. Choosing "passes to someone else" and
+      // then leaving the name blank used to fall through to the residue wording
+      // with nothing on the page to show it — silently changing who inherits.
+      // A charity does not "fail to survive me by 30 days" — it ceases to exist
+      // or amalgamates, so the trigger has to be worded for the right kind of
+      // recipient or the clause never bites.
+      const failTrigger = gift.isCharity
+        ? `If ${recipient} shall have ceased to exist or amalgamated with another charity at my death`
+        : `If ${recipient} shall fail to survive me by 30 days`;
+
       let failClause: string;
-      if (gift.substitutionType === 'named' && gift.substitutionRecipient) {
+      if (gift.substitutionType === 'named') {
         failClause =
-          `If ${gift.recipient} shall fail to survive me by 30 days, this gift shall pass to ` +
-          `${gift.substitutionRecipient} absolutely.`;
+          `${failTrigger}, this gift shall pass to ` +
+          `${field(gift.substitutionRecipient, 'alternative recipient name missing')} absolutely.`;
       } else {
-        failClause =
-          `If ${gift.recipient} shall fail to survive me by 30 days, this gift shall fall into ` +
-          `and form part of my residuary estate.`;
+        failClause = `${failTrigger}, this gift shall fall into and form part of my residuary estate.`;
       }
 
       ctx = drawText(ctx, giftClause, { size: 11 });
@@ -329,8 +379,58 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
     ctx = gap(ctx, 8);
   }
 
+  // ── Burden of inheritance tax ──────────────────────────────────────────────
+  // Only meaningful once there is a specific gift to allocate tax between. The
+  // default rule (IHTA 1984 s.211) already sends tax on UK free-estate property
+  // to residue as a testamentary expense, but it is silent on gifts the testator
+  // wants the recipient to bear, and it says nothing about what happens when
+  // residue cannot carry the charge. Both are spelled out here.
+  const ihtNum = clauseNum + 1;
+  const hasGifts = data.specificGifts.length > 0;
+
+  if (hasGifts) {
+    const chargeableGifts = data.specificGifts.filter(g => !g.isCharity);
+    const anyFreeOfTax = chargeableGifts.some(g => g.taxBurden === 'freeOfTax');
+
+    ctx = drawText(ctx, `${ihtNum}. BURDEN OF INHERITANCE TAX`, { font: bold, size: 11 });
+    ctx = gap(ctx, 4);
+
+    if (!anyFreeOfTax) {
+      // Nothing was given free of tax, so there is no allocation to describe —
+      // saying otherwise would leave a limb of the clause pointing at no gift.
+      ctx = drawText(ctx,
+        `Each specific gift made by this Will shall bear its own inheritance tax, and my Executors shall ` +
+        `be entitled to recover or retain that tax out of the property comprised in the gift. All other ` +
+        `inheritance tax and other taxes and duties payable on or by reason of my death in respect of ` +
+        `property passing under this Will shall be borne by my residuary estate as a testamentary expense.`,
+        { size: 11 });
+    } else {
+      ctx = drawText(ctx,
+        `All inheritance tax and other taxes and duties payable on or by reason of my death in respect of ` +
+        `property passing under this Will shall be borne as follows:`,
+        { size: 11 });
+      ctx = gap(ctx, 6);
+      ctx = drawText(ctx,
+        `(a) Any gift expressed above to be free of inheritance tax shall be paid free of such tax, and the ` +
+        `tax attributable to it shall be borne by my residuary estate as a testamentary expense.`,
+        { size: 11, indent: 16 });
+      ctx = gap(ctx, 4);
+      ctx = drawText(ctx,
+        `(b) Any other gift shall bear its own inheritance tax, and my Executors shall be entitled to ` +
+        `recover or retain that tax out of the property comprised in the gift.`,
+        { size: 11, indent: 16 });
+      ctx = gap(ctx, 4);
+      ctx = drawText(ctx,
+        `(c) If my residuary estate is insufficient to bear the inheritance tax on the gifts given free of ` +
+        `tax, those gifts shall abate rateably between them to the extent necessary to discharge that tax.`,
+        { size: 11, indent: 16 });
+    }
+
+    ctx = gap(ctx, 14);
+  }
+
   // ── Residuary ──────────────────────────────────────────────────────────────
-  const resNum = clauseNum + (data.specificGifts.length > 0 ? 1 : 0);
+  const resNum = clauseNum + (hasGifts ? 2 : 0);
   ctx = drawText(ctx, `${resNum}. RESIDUARY ESTATE`, { font: bold, size: 11 });
   ctx = gap(ctx, 4);
   ctx = drawText(ctx,
@@ -342,7 +442,8 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
 
   for (const b of data.beneficiaries) {
     ctx = drawText(ctx,
-      `• ${b.name}${b.relationship ? ' (' + b.relationship + ')' : ''} — ${b.percentage}%` +
+      `• ${field(b.name, 'beneficiary name missing')}` +
+      `${b.relationship.trim() ? ' (' + sanitizeForPdf(b.relationship).trim() + ')' : ''} — ${pctLabel(b.percentage)}` +
       `${b.isMinor ? ' (held on trust until age 18)' : ''}`,
       { size: 11, indent: 16 });
   }
@@ -360,19 +461,18 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
 
   for (let i = 0; i < data.beneficiaries.length; i++) {
     const b = data.beneficiaries[i];
-    const letter = String.fromCharCode(97 + i);
     ctx = drawText(ctx,
-      `(${letter}) ${substitutionClause(b, data.beneficiaries)}`,
+      `(${giftLetter(i)}) ${substitutionClause(b)}`,
       { size: 11, indent: 16 });
     ctx = gap(ctx, 6);
   }
 
   // ── Ultimate backstop ─────────────────────────────────────────────────────
   ctx = gap(ctx, 4);
-  if (data.ultimateBackstop) {
+  if (data.ultimateBackstop.trim()) {
     ctx = drawText(ctx,
       `If no residuary beneficiary or their substituted beneficiary shall survive me by 30 days, ` +
-      `my residuary estate shall pass to ${data.ultimateBackstop} absolutely.`,
+      `my residuary estate shall pass to ${sanitizeForPdf(data.ultimateBackstop).trim()} absolutely.`,
       { size: 11 });
   } else {
     ctx = drawText(ctx,
@@ -387,7 +487,7 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
     ctx = gap(ctx, 10);
     ctx = drawText(ctx, 'TRUSTS FOR MINOR BENEFICIARIES', { font: bold, size: 10 });
     ctx = gap(ctx, 4);
-    const minorNames = minorBens.map(b => b.name).join(' and ');
+    const minorNames = minorBens.map(b => field(b.name, 'beneficiary name missing')).join(' and ');
     ctx = drawText(ctx,
       `Any share of my residuary estate passing to a beneficiary (including ${minorNames}) who has not ` +
       `attained the age of 18 years at the date of my death shall be held by my Executors as trustees on ` +

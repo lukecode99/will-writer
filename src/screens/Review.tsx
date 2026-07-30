@@ -161,10 +161,18 @@ export default function Review({ data, onEdit, onBack, onRestart, hasGuardianSte
           : data.specificGifts.map((g, i) => (
             <View key={g.id}>
               <Row label={`Gift ${i + 1}`} value={`${g.description} → ${g.recipient}${g.isCharity ? ' (charity)' : ''}`} />
+              {!g.isCharity && (
+                <Row
+                  label="Inheritance tax"
+                  value={g.taxBurden === 'freeOfTax'
+                    ? 'Paid by your estate (reduces residuary shares)'
+                    : 'Paid by the recipient'}
+                />
+              )}
               <Row
                 label="If recipient dies"
-                value={g.substitutionType === 'named' && g.substitutionRecipient
-                  ? `Passes to ${g.substitutionRecipient}`
+                value={g.substitutionType === 'named'
+                  ? `Passes to ${g.substitutionRecipient || '(not yet named)'}`
                   : 'Falls into residuary estate'}
               />
             </View>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
-import { WillData, SpecificGift, GiftSubstitutionType } from '../types';
+import { WillData, SpecificGift, GiftSubstitutionType, GiftTaxBurden } from '../types';
 import { C, shared } from './shared';
 
 interface Props {
@@ -19,12 +19,33 @@ const GIFT_SUB_OPTIONS: Array<{ value: GiftSubstitutionType; label: string }> = 
   { value: 'named', label: 'Passes to someone else' },
 ];
 
+const TAX_OPTIONS: Array<{ value: GiftTaxBurden; label: string; detail: string }> = [
+  {
+    value: 'bearsOwnTax',
+    label: 'The recipient pays the tax on it (recommended)',
+    detail: 'Any inheritance tax on this gift comes out of the gift itself. Everything you leave in the residuary estate is protected.',
+  },
+  {
+    value: 'freeOfTax',
+    label: 'My estate pays the tax on it ("free of tax")',
+    detail: 'The recipient gets the full value and the tax is paid from your residuary estate instead — so it comes out of your residuary beneficiaries’ shares.',
+  },
+];
+
 export default function SpecificGifts({ data, onChange, onNext, onBack }: Props) {
   function addGift() {
     onChange({
       specificGifts: [
         ...data.specificGifts,
-        { id: uid(), recipient: '', description: '', isCharity: false, substitutionType: 'residue', substitutionRecipient: '' },
+        {
+          id: uid(),
+          recipient: '',
+          description: '',
+          isCharity: false,
+          taxBurden: 'bearsOwnTax',
+          substitutionType: 'residue',
+          substitutionRecipient: '',
+        },
       ],
     });
   }
@@ -85,6 +106,49 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
             />
             <Text style={styles.switchLabel}>This is a charity</Text>
           </View>
+
+          {gift.isCharity ? (
+            <Text style={[shared.hint, { marginTop: 12 }]}>
+              Gifts to a UK registered charity are exempt from inheritance tax (IHTA 1984 s.23),
+              so there is no tax on this gift to allocate.
+            </Text>
+          ) : (
+            <>
+              <Text style={[shared.label, { marginTop: 16 }]}>Who pays the inheritance tax on this gift?</Text>
+              <View style={styles.radioGroup}>
+                {TAX_OPTIONS.map(opt => {
+                  const selected = (gift.taxBurden ?? 'bearsOwnTax') === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.radioOption, selected && styles.radioOptionSelected]}
+                      onPress={() => updateGift(gift.id, { taxBurden: opt.value })}
+                    >
+                      <View style={[styles.radioCircle, selected && styles.radioCircleSelected]}>
+                        {selected && <View style={styles.radioInner} />}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.radioLabel, selected && styles.radioLabelSelected]}>{opt.label}</Text>
+                        <Text style={styles.radioDetail}>{opt.detail}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {(gift.taxBurden ?? 'bearsOwnTax') === 'freeOfTax' && (
+                <View style={styles.warnBox}>
+                  <Text style={styles.warnText}>
+                    Worth knowing: choosing "free of tax" also grosses the tax up, so your estate pays
+                    more inheritance tax overall. And if your residuary estate is too small to cover it —
+                    which is easy to happen if this gift is a large one, like a house — the gift is cut
+                    down anyway to pay the tax, after your residuary beneficiaries have already been
+                    wiped out. Your will explains this in the Inheritance Tax clause.
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
 
           <Text style={[shared.label, { marginTop: 16 }]}>
             If {gift.recipient || 'the recipient'} doesn't survive you
@@ -192,5 +256,24 @@ const styles = StyleSheet.create({
   radioLabelSelected: {
     color: C.primary,
     fontWeight: '600',
+  },
+  radioDetail: {
+    fontSize: 12,
+    color: C.textLight,
+    marginTop: 3,
+    lineHeight: 17,
+  },
+  warnBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E4C77A',
+    backgroundColor: '#FDF6E3',
+  },
+  warnText: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: '#6B5216',
   },
 });
