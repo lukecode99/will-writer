@@ -418,8 +418,29 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
   ctx = gap(ctx, 14);
 
   // ── Funeral Wishes ─────────────────────────────────────────────────────────
+  // The body is assembled before anything is drawn so the section can be
+  // dropped whole when there is nothing to say. Guarding on
+  // `funeralWishes || burialPreference` was not enough: "No preference" stores
+  // the truthy 'noPreference', which draws no body line, so the heading and the
+  // "I express the following wishes..." preamble printed with nothing under
+  // them. Whitespace-only free text did the same.
   const funeralNum = resNum + 1;
-  if (data.funeralWishes || data.burialPreference) {
+  const funeralLines: string[] = [];
+
+  if (data.burialPreference === 'burial') {
+    funeralLines.push('I wish to be buried.');
+  } else if (data.burialPreference === 'cremation') {
+    funeralLines.push('I wish to be cremated.');
+  } else if (data.burialPreference === 'noPreference') {
+    // An explicit "no preference" is itself a wish worth recording — it tells
+    // the executors the choice is theirs rather than leaving them guessing.
+    funeralLines.push('I have no preference as to burial or cremation, and leave that decision to my Executors.');
+  }
+
+  const freeTextWishes = sanitizeForPdf(data.funeralWishes).trim();
+  if (freeTextWishes) funeralLines.push(freeTextWishes);
+
+  if (funeralLines.length > 0) {
     ctx = drawText(ctx, `${funeralNum}. FUNERAL WISHES`, { font: bold, size: 11 });
     ctx = gap(ctx, 4);
     ctx = drawText(ctx,
@@ -427,14 +448,8 @@ export async function generateWillPdf(data: WillData): Promise<Uint8Array> {
       { size: 11 });
     ctx = gap(ctx, 4);
 
-    if (data.burialPreference === 'burial') {
-      ctx = drawText(ctx, `I wish to be buried.`, { size: 11, indent: 16 });
-    } else if (data.burialPreference === 'cremation') {
-      ctx = drawText(ctx, `I wish to be cremated.`, { size: 11, indent: 16 });
-    }
-
-    if (data.funeralWishes) {
-      ctx = drawText(ctx, data.funeralWishes, { size: 11, indent: 16 });
+    for (const line of funeralLines) {
+      ctx = drawText(ctx, line, { size: 11, indent: 16 });
     }
     ctx = gap(ctx, 14);
   }
