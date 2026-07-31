@@ -9,7 +9,8 @@
     "export:web": "npx expo export --platform web --public-url https://lukecode99.github.io/will-writer",
     "audit": "node audit/run.mjs",
     "test:storage": "node audit/storage-test.mjs",
-    "test": "node audit/run.mjs && node audit/storage-test.mjs"
+    "test:people": "node audit/people-test.mjs",
+    "test": "node audit/run.mjs && node audit/storage-test.mjs && node audit/people-test.mjs"
   },
   "dependencies": {
     "@babel/runtime": "^8.0.0",

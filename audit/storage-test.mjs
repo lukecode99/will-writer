@@ -237,6 +237,12 @@ await test('field defaults on old drafts', async () => {
   // was written to fix, only in reverse.
   check('guardians saved before the split reopen as joint first choices',
     data.guardians.length === 2 && data.guardians.every(g => g.role === 'primary'));
+  // Unlinked, and it has to stay that way. Fanny was typed by hand, and the
+  // only thing the app could use to link her to a person is her name — which is
+  // precisely the guess the link was added to remove. She goes on being matched
+  // by name, so this draft behaves exactly as it did before the picker existed.
+  check('an old beneficiary reopens unlinked, not guessed at',
+    data.beneficiaries[0].linkedPersonId === '');
 });
 
 console.log(`\n${ran} checks, ${ran - failures} passed, ${failures} failed.`);

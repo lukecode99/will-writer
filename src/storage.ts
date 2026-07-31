@@ -63,6 +63,11 @@ function normalizeBeneficiary(b: any): Beneficiary {
     isOwnChild: b.isOwnChild ?? false,
     isMinor: b.isMinor ?? false,
     substitution: b.substitution || { type: 'per-stirpes' as SubstitutionType, namedPerson: '' },
+    // Drafts saved before beneficiaries could be picked from the family details
+    // reopen unlinked, which is what they are: names typed by hand. They carry
+    // on being matched by name, exactly as they were. Inventing a link by
+    // guessing from the spelling is the failure this field exists to remove.
+    linkedPersonId: typeof b.linkedPersonId === 'string' ? b.linkedPersonId : '',
   };
 }
 

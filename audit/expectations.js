@@ -242,6 +242,65 @@ const RAW = {
     ),
   },
 
+  // ── Beneficiaries picked from the family details ──────────────────────────
+  'child-name-differs-unlinked': {
+    // The child is provided for. The warning fires anyway, because the only
+    // thing being compared is the spelling, and "Oliver James Smith" is not
+    // "Oliver Smith".
+    //
+    // Pinned as expected rather than fixed. This is what an entry typed by hand
+    // has always done and still does, and the answer is not to loosen the match
+    // — a looser match buys quiet here by starting to miss children who really
+    // were left out, and that error costs someone a claim. The answer is to stop
+    // asking the question by name at all, which is the next scenario.
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('Oliver James Smith', 'not left anything in this will')),
+  },
+
+  'child-name-differs-linked': {
+    // Same two spellings, same document, one difference: the share carries a
+    // reference to the child rather than a second copy of his name. Silence.
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryDoesNotMention('not left anything in this will')),
+  },
+
+  'spouse-linked-different-spelling': {
+    // The link beats the name for the spouse too, not just for children. Worth
+    // its own case: the spouse check is a separate code path with a separate
+    // reference, and a fix that only reached the children would look right in
+    // the diff and be half done.
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryDoesNotMention('is your spouse and is not left anything')),
+  },
+
+  'beneficiary-named-twice': {
+    // 50 + 30 + 20 = 100, so every arithmetic check passes and the will
+    // generates cleanly. One person is simply written down twice and paid twice.
+    // Nothing else in the app can see it.
+    //
+    // Different case on purpose — 'oliver smith' against 'Oliver Smith'. If the
+    // duplicate check were ever made case-sensitive this scenario goes quiet,
+    // which is the failure mode most likely to be introduced by accident.
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('appears more than once')),
+  },
+
+  'beneficiary-link-orphaned': {
+    // Oliver held a share and was then removed from the family details. Both
+    // the share and the name stand: an edit on one screen is not an instruction
+    // to disinherit someone on another, and an app that acted on it as though it
+    // were would be rewriting a will off the back of a keystroke. The
+    // disagreement is said out loud instead.
+    verdict: 'ok',
+    mustContain: ['• Oliver Smith (son) — 30%'],
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('no longer', 'family details')),
+  },
+
   'divorced-spouse-not-beneficiary': {
     // The control. No subsisting marriage, no 1975 spouse claim, no warning —
     // a check that fires when it should not is worse than none, because it

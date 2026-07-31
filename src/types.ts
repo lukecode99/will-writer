@@ -89,6 +89,29 @@ export interface Beneficiary {
   isOwnChild: boolean;
   isMinor: boolean;
   substitution: BeneficiarySubstitution;
+
+  /**
+   * The person on the Family step this beneficiary *is*, or '' if the name was
+   * typed by hand.
+   *
+   * The check for a child left out of the will used to compare the name on the
+   * Family step against the names in the residuary list, character for
+   * character. That is not a test of whether someone was provided for, it is a
+   * test of whether they were typed identically twice: "Oliver James Smith" and
+   * "Oliver Smith" are one child to everyone except the comparison. It cried
+   * wolf on wills that were perfectly fine, which is the worse direction — a
+   * review screen that is wrong often enough gets scrolled past, and then the
+   * one warning that mattered goes with it.
+   *
+   * Holding the identity instead of the spelling makes the two screens agree by
+   * construction. It also means a correction on either screen is a correction on
+   * both, rather than a way to silently break the link.
+   *
+   * Empty for every draft saved before the picker existed, and for anyone added
+   * through "someone else" — those still fall back to matching on the name, so
+   * nothing that used to be caught stops being caught.
+   */
+  linkedPersonId: string;
 }
 
 export type MaritalStatus = 'single' | 'married' | 'civilPartnership' | 'divorced' | 'widowed' | '';

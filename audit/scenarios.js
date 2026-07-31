@@ -31,6 +31,9 @@ function ben(id, name, relationship, percentage, opts = {}) {
     isOwnChild: opts.isOwnChild || false,
     isMinor: opts.isMinor || false,
     substitution: opts.substitution || { type: 'per-stirpes', namedPerson: '' },
+    // '' means the name was typed by hand, which is what every fixture written
+    // before the picker existed was doing. Those keep being matched by name.
+    linkedPersonId: opts.linkedPersonId || '',
   };
 }
 
@@ -391,8 +394,86 @@ const longText = {
     'for its general charitable purposes ').repeat(4),
 };
 
+// -------------------------------------------- child named two ways, unlinked
+//
+// The child is "Oliver James Smith" on the family step and the share was typed
+// out as "Oliver Smith". One child, provided for, and the name comparison
+// cannot see it. Pinned deliberately: this is the false alarm the link removes,
+// and it is still what happens to an entry typed by hand. The fix is to stop
+// asking the question by spelling, not to loosen the matching — a looser match
+// starts missing children who really were left out, which is the direction that
+// actually costs someone their claim.
+const childNameDiffersUnlinked = {
+  ...clone(baseline),
+  children: [
+    { id: 'c1', name: 'Oliver James Smith', dob: '01/06/2004' },
+    { id: 'c2', name: 'Amelia Smith', dob: '12/09/2006' },
+  ],
+};
+
+// ---------------------------------------------- same names, but linked
+//
+// Identical to the fixture above except that the share carries the reference to
+// the child rather than a second copy of his name. Nothing is reported, because
+// nothing is wrong.
+const childNameDiffersLinked = {
+  ...clone(childNameDiffersUnlinked),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50', { linkedPersonId: 'p:partner' }),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true, linkedPersonId: 'c:c1' }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true, linkedPersonId: 'c:c2' }),
+  ],
+};
+
+// -------------------------------------------------- spouse linked, not named
+//
+// The spouse's share is spelled differently from the family step. The link
+// settles it; the spouse warning must not fire.
+const spouseLinkedDifferentSpelling = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane E Smith', 'wife', '50', { linkedPersonId: 'p:partner' }),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true, linkedPersonId: 'c:c1' }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true, linkedPersonId: 'c:c2' }),
+  ],
+};
+
+// ------------------------------------------------- one person, two entries
+//
+// 50 + 30 + 20 still comes to 100, so the arithmetic check passes and the will
+// generates. Only the repeated name gives it away.
+const beneficiaryNamedTwice = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true }),
+    ben('b3', 'oliver smith', 'son', '20', { isOwnChild: true }),
+  ],
+};
+
+// -------------------------------------------------- link to a deleted child
+//
+// The share was set up by picking Oliver, and Oliver was later removed from the
+// family details. The share stays exactly as it was and the disagreement is
+// reported — deleting someone from one screen is not an instruction to
+// disinherit them on another.
+const beneficiaryLinkOrphaned = {
+  ...clone(baseline),
+  children: [{ id: 'c2', name: 'Amelia Smith', dob: '12/09/2006' }],
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50', { linkedPersonId: 'p:partner' }),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true, linkedPersonId: 'c:c1' }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true, linkedPersonId: 'c:c2' }),
+  ],
+};
+
 module.exports = {
   baseline,
+  'child-name-differs-unlinked': childNameDiffersUnlinked,
+  'child-name-differs-linked': childNameDiffersLinked,
+  'spouse-linked-different-spelling': spouseLinkedDifferentSpelling,
+  'beneficiary-named-twice': beneficiaryNamedTwice,
+  'beneficiary-link-orphaned': beneficiaryLinkOrphaned,
   'zero-residuary': zeroResiduary,
   'percentages-90': pct90,
   'percentages-110': pct110,

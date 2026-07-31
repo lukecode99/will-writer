@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
 import { WillData, Beneficiary, SubstitutionType } from '../types';
 import { blockingProblems, parsePercentage, percentageTotal } from '../validation';
+import { KnownPerson, knownPeople, knownRefs } from '../people';
 import { C, shared } from './shared';
 import { notify } from '../platform';
 
@@ -108,16 +109,28 @@ const SUB_OPTIONS: Array<{ value: SubstitutionType; label: string; detail: strin
 ];
 
 export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Props) {
-  function addBeneficiary() {
+  const known = knownPeople(data);
+  const byRef = new Map(known.map(p => [p.ref, p]));
+  const liveRefs = knownRefs(data);
+
+  // Once chosen, a person leaves the list. Enforcing it by construction rather
+  // than by validation is the difference between "you cannot do this" and "you
+  // did this and here is a message about it" — and two entries for one person
+  // is never what anyone meant.
+  const available = known.filter(p => !data.beneficiaries.some(b => b.linkedPersonId === p.ref));
+
+  /** `person` omitted means "someone else": a name typed by hand, unlinked. */
+  function addBeneficiary(person?: KnownPerson) {
     onChange({
       beneficiaries: [
         ...data.beneficiaries,
         {
           id: uid(),
-          name: '',
-          relationship: '',
+          linkedPersonId: person ? person.ref : '',
+          name: person ? person.name : '',
+          relationship: person ? person.relationship : '',
           percentage: '',
-          isOwnChild: false,
+          isOwnChild: person ? person.isOwnChild : false,
           isMinor: false,
           substitution: { type: 'per-stirpes', namedPerson: '' },
         },
@@ -161,7 +174,13 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
         Split it between beneficiaries — percentages must total 100%.
       </Text>
 
-      {data.beneficiaries.map((b, i) => (
+      {data.beneficiaries.map((b, i) => {
+        const linked = b.linkedPersonId ? byRef.get(b.linkedPersonId) : undefined;
+        // Set but unresolvable: the person was removed from the family details
+        // after this share was set up. Distinguished from a name merely left
+        // blank mid-edit, which is not a removal and must not be reported as one.
+        const dangling = !!b.linkedPersonId && !liveRefs.has(b.linkedPersonId);
+        return (
         <View key={b.id} style={shared.card}>
           <View style={shared.cardHeader}>
             <Text style={shared.cardTitle}>Beneficiary {i + 1}</Text>
@@ -171,16 +190,41 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           </View>
 
           <Text style={shared.label}>Full name</Text>
-          <TextInput
-            style={[shared.input, !b.name.trim() ? styles.inputError : null]}
-            placeholder="Full legal name"
-            value={b.name}
-            onChangeText={v => updateBen(b.id, { name: v })}
-            autoCapitalize="words"
-          />
-          {!b.name.trim() ? (
+          {linked ? (
+            /* Not editable here on purpose. This entry is a reference to a
+               person, not a copy of their name, so a second place to edit the
+               name would be a second version of it — and the version that
+               reached the will would depend on which screen was touched last. */
+            <>
+              <View style={styles.linkedName}>
+                <Text style={styles.linkedNameText}>{linked.name}</Text>
+                <Text style={styles.linkedTag}>from your family details</Text>
+              </View>
+              <Text style={shared.hint}>
+                To change the spelling, edit it on the Family step — it is the same person, so it has
+                to read the same way in both places.
+              </Text>
+            </>
+          ) : (
+            <>
+              <TextInput
+                style={[shared.input, !b.name.trim() ? styles.inputError : null]}
+                placeholder="Full legal name"
+                value={b.name}
+                onChangeText={v => updateBen(b.id, { name: v })}
+                autoCapitalize="words"
+              />
+              {!b.name.trim() ? (
+                <Text style={styles.errorText}>
+                  A share left to nobody in particular cannot be paid out. Name this beneficiary, or remove them.
+                </Text>
+              ) : null}
+            </>
+          )}
+          {dangling ? (
             <Text style={styles.errorText}>
-              A share left to nobody in particular cannot be paid out. Name this beneficiary, or remove them.
+              This person is no longer in your family details. Their share has been left exactly as it
+              was — check the name is right, or remove them.
             </Text>
           ) : null}
 
@@ -206,14 +250,22 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
             <Text style={styles.errorText}>{pctError(b.percentage)}</Text>
           )}
 
+          {/* Locked when the beneficiary was picked from the family details,
+              because there it is a fact rather than an opinion. It drives the
+              s.33 warning below, and letting someone untick it for their own
+              child would switch that warning off for the one person it is
+              about. */}
           <View style={styles.toggleRow}>
             <Switch
               value={b.isOwnChild}
               onValueChange={v => updateBen(b.id, { isOwnChild: v })}
+              disabled={!!linked}
               thumbColor={b.isOwnChild ? C.primary : '#ccc'}
               trackColor={{ false: '#ddd', true: '#9BAFD1' }}
             />
-            <Text style={styles.toggleLabel}>This is my child</Text>
+            <Text style={styles.toggleLabel}>
+              This is my child{linked ? ' — from your family details' : ''}
+            </Text>
           </View>
 
           <View style={styles.toggleRow}>
@@ -282,10 +334,33 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
             <Text style={styles.previewText}>{previewText(b, data.beneficiaries)}</Text>
           </View>
         </View>
-      ))}
+        );
+      })}
 
-      <TouchableOpacity style={shared.addBtn} onPress={addBeneficiary}>
-        <Text style={shared.addBtnText}>+ Add a beneficiary</Text>
+      {available.length > 0 ? (
+        <View style={styles.pickerBlock}>
+          <Text style={styles.pickerTitle}>People you have already told us about</Text>
+          <Text style={shared.hint}>
+            Adding someone from here links this share to that person, so correcting their name on the
+            Family step corrects it here too. Each person can only be added once.
+          </Text>
+          <View style={styles.chipRow}>
+            {available.map(p => (
+              <TouchableOpacity key={p.ref} style={styles.chip} onPress={() => addBeneficiary(p)}>
+                <Text style={styles.chipText}>+ {p.name}</Text>
+                <Text style={styles.chipRel}>{p.relationship}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {/* Wrapped rather than passed directly: `onPress` hands the press event
+          to its handler, which would arrive as the person to link to. */}
+      <TouchableOpacity style={shared.addBtn} onPress={() => addBeneficiary()}>
+        <Text style={shared.addBtnText}>
+          {known.length > 0 ? '+ Add someone else' : '+ Add a beneficiary'}
+        </Text>
       </TouchableOpacity>
 
       {data.beneficiaries.length > 0 ? (
@@ -325,6 +400,56 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
 }
 
 const styles = StyleSheet.create({
+  linkedName: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexWrap: 'wrap',
+    paddingVertical: 10,
+    gap: 8,
+  },
+  linkedNameText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.text,
+  },
+  linkedTag: {
+    fontSize: 11.5,
+    color: C.textLight,
+  },
+  pickerBlock: {
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  pickerTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.text,
+    marginBottom: 2,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  chip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: C.primary,
+    backgroundColor: '#EEF2FA',
+  },
+  chipText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: C.primary,
+  },
+  chipRel: {
+    fontSize: 11,
+    color: C.textLight,
+    marginTop: 1,
+  },
   inputError: {
     borderColor: C.danger,
   },

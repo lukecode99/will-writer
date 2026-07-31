@@ -1,6 +1,7 @@
 import { WillData } from './types';
 import { unprintableChars } from './text';
 import { parseUkDate, ageInYears, hasMinorChildren, todayUtc } from './family';
+import { PARTNER_REF, childRef, knownRefs } from './people';
 
 /**
  * Whole-document validation, in one place.
@@ -265,14 +266,26 @@ export function warnings(data: WillData): WillProblem[] {
     });
   }
 
-  // Children who are not provided for anywhere are the classic ground for a
-  // claim under the Inheritance (Provision for Family and Dependants) Act 1975.
+  // Who is provided for, established two ways.
+  //
+  // By link first: anyone picked from the family details on the residuary step
+  // carries a reference to the person they are, so the answer does not depend on
+  // the name being spelled the same way in two places. That was the original
+  // mechanism and it was never a test of provision — "Oliver James Smith" on one
+  // screen and "Oliver Smith" on the other is one child, and reporting him as
+  // disinherited is not a small error. A review screen that is wrong on wills
+  // that are fine teaches people to scroll past it.
+  //
+  // By name second, and it stays: a will typed out before the picker existed has
+  // no links, and neither does anyone added through "someone else". Nothing that
+  // used to be caught stops being caught.
   const providedFor = new Set(
     [
       ...data.beneficiaries.map(b => b.name),
       ...data.specificGifts.map(g => g.recipient),
     ].map(name => name.trim().toLowerCase()).filter(Boolean),
   );
+  const linkedRefs = new Set(data.beneficiaries.map(b => b.linkedPersonId).filter(Boolean));
   // A spouse or civil partner left out entirely. This was missing while the
   // equivalent check for children was present, which is the wrong way round:
   // under the Inheritance (Provision for Family and Dependants) Act 1975 a
@@ -286,7 +299,7 @@ export function warnings(data: WillData): WillProblem[] {
   // this — is exactly who needs telling.
   const partner = data.partnerName.trim();
   const marriedNow = data.maritalStatus === 'married' || data.maritalStatus === 'civilPartnership';
-  if (marriedNow && partner && !providedFor.has(partner.toLowerCase())) {
+  if (marriedNow && partner && !linkedRefs.has(PARTNER_REF) && !providedFor.has(partner.toLowerCase())) {
     out.push({
       step: 'residuary',
       message: `${partner} is your ${data.maritalStatus === 'married' ? 'spouse' : 'civil partner'} and is not left anything in this will. You are allowed to do that, but a spouse or civil partner has the strongest claim of anyone under the Inheritance (Provision for Family and Dependants) Act 1975 — and staying separated without divorcing does not change it. If this is deliberate, take advice on recording why.`,
@@ -294,12 +307,64 @@ export function warnings(data: WillData): WillProblem[] {
   }
 
   const omitted = data.children
+    .filter(child => !linkedRefs.has(childRef(child.id)))
     .map(child => child.name.trim())
     .filter(name => name && !providedFor.has(name.toLowerCase()));
   if (omitted.length > 0) {
     out.push({
       step: 'residuary',
       message: `${omitted.join(', ')} ${omitted.length === 1 ? 'is' : 'are'} not left anything in this will. That is allowed, but leaving a child out can be challenged — say so deliberately rather than by accident.`,
+    });
+  }
+
+  // The same person entered twice.
+  //
+  // The picker cannot produce this — a person leaves the list the moment they
+  // are chosen — but "someone else" is free text, and typing a name that is
+  // already there splits one person's share across two entries. It reads as
+  // two beneficiaries and pays out as two, so the arithmetic still comes to
+  // 100% and nothing else notices.
+  //
+  // A warning rather than a block, because two people genuinely can share a
+  // name: a father and a son, most obviously, which is exactly the family where
+  // it is most likely to be deliberate.
+  const firstSpelling = new Map<string, string>();
+  const duplicated: string[] = [];
+  data.beneficiaries.forEach(b => {
+    const name = b.name.trim();
+    if (!name) return;
+    const key = name.toLowerCase();
+    const seen = firstSpelling.get(key);
+    if (seen === undefined) {
+      firstSpelling.set(key, name);
+    } else if (!duplicated.includes(seen)) {
+      duplicated.push(seen);
+    }
+  });
+  if (duplicated.length > 0) {
+    out.push({
+      step: 'residuary',
+      message: `${duplicated.join(', ')} ${duplicated.length === 1 ? 'appears' : 'appear'} more than once in your list of beneficiaries. If that is the same person twice, combine them into one entry with one share — if they really are two different people with the same name, add something to tell them apart.`,
+    });
+  }
+
+  // A beneficiary picked from the family details whose person has since been
+  // removed there.
+  //
+  // Nothing is changed on their behalf: the share stands and the name stands.
+  // Removing someone from the family details is not an instruction to disinherit
+  // them, and acting on it as though it were would be an app rewriting a will
+  // off the back of an edit made on a different screen. It is said out loud
+  // because the two screens now disagree, and only the user can say which one is
+  // right.
+  const liveRefs = knownRefs(data);
+  const orphaned = data.beneficiaries
+    .filter(b => b.linkedPersonId && !liveRefs.has(b.linkedPersonId))
+    .map(b => b.name.trim() || 'One of your beneficiaries');
+  if (orphaned.length > 0) {
+    out.push({
+      step: 'residuary',
+      message: `${orphaned.join(', ')} ${orphaned.length === 1 ? 'is' : 'are'} still left a share but no longer ${orphaned.length === 1 ? 'appears' : 'appear'} in your family details. Nothing has been changed — check which of the two is right.`,
     });
   }
 

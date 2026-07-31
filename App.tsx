@@ -24,6 +24,7 @@ import {
 } from './src/storage';
 import { notify } from './src/platform';
 import { hasMinorChildren } from './src/family';
+import { syncLinkedBeneficiaries } from './src/people';
 import { StepKey } from './src/validation';
 import { C, CONTENT_MAX_WIDTH } from './src/screens/shared';
 import ProgressHeader, { SaveState } from './src/components/ProgressHeader';
@@ -83,7 +84,12 @@ function Wizard({ id, onHome }: WizardProps) {
 
   const update = useCallback((updates: Partial<WillData>) => {
     setData(prev => {
-      const next = { ...prev, ...updates };
+      // Every change goes through here, which is the only place that sees an
+      // edit to the family details and an edit to the beneficiary list as the
+      // same event. Correcting a child's name on the Family step has to reach
+      // the share left to that child, and there is no other single point where
+      // both are in hand.
+      const next = syncLinkedBeneficiaries({ ...prev, ...updates });
       saveWillData(id, next);
       return next;
     });
