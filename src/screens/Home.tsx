@@ -30,15 +30,40 @@ const SUITABLE = [
   'Holding a child\'s share until they are 18.',
 ];
 
-const NOT_SUITABLE = [
-  'You live in Scotland or Northern Ireland, or own property outside England and Wales — different law applies, and this will may not do what you expect there.',
-  'You own a business, a farm, or agricultural land.',
-  'You want a trust that lasts — a life interest for a partner, or provision for a disabled beneficiary.',
-  'You want to leave out a spouse, civil partner, child, or anyone who depends on you financially. They may still be able to claim against your estate.',
-  'You have children from an earlier relationship as well as a current partner, and want to provide for both.',
-  'You are separated but not divorced. Until the divorce is final your spouse is still your spouse.',
-  'Your estate is big enough that inheritance tax planning matters — this app does not do tax planning.',
-  'The person making the will is seriously ill, or there is any doubt they fully understand it.',
+/** A line in the guide. `why` is for the cases where naming the situation is
+ *  not enough on its own — where a reader would otherwise reasonably think
+ *  "that's fine, I'll just write it in the will anyway". */
+interface GuideItem {
+  text: string;
+  why?: string;
+}
+
+const NOT_SUITABLE: GuideItem[] = [
+  { text: 'You live in Scotland or Northern Ireland, or own property outside England and Wales — different law applies, and this will may not do what you expect there.' },
+  { text: 'You own a business, a farm, or agricultural land.' },
+  { text: 'You want a trust that lasts — a life interest for a partner, or provision for a disabled beneficiary.' },
+  {
+    text: 'You want to leave out a spouse, civil partner, child, or anyone who depends on you financially.',
+    // The one item people argue with, because writing someone out feels like
+    // something a will obviously can do. It can. It just does not settle it —
+    // and what settles it is evidence this app has no way of producing.
+    why:
+      'Leaving someone out of the will does not remove them. A husband, wife or civil partner, ' +
+      'a child of any age, and anyone you were supporting financially can all ask a court to ' +
+      'override what the will says and award them a share — and courts do. A spouse has the ' +
+      'strongest claim: they do not have to show they need the money, only that what you left ' +
+      'them was less than reasonable.\n\n' +
+      'What defends that kind of will is not its wording. It is evidence, recorded at the time, ' +
+      'of why you did it — a solicitor\'s notes of what you told them, and a signed letter kept ' +
+      'with the will. This app cannot produce any of that. It prints what you type. If the will ' +
+      'is challenged there is nothing behind it to explain your reasons, and the people you were ' +
+      'trying to provide for are the ones left arguing it out in court, paying for it out of the ' +
+      'estate, after you are gone.',
+  },
+  { text: 'You have children from an earlier relationship as well as a current partner, and want to provide for both.' },
+  { text: 'You are separated but not divorced. Until the divorce is final your spouse is still your spouse.' },
+  { text: 'Your estate is big enough that inheritance tax planning matters — this app does not do tax planning.' },
+  { text: 'The person making the will is seriously ill, or there is any doubt they fully understand it.' },
 ];
 
 const WORTH_KNOWING = [
@@ -49,15 +74,32 @@ const WORTH_KNOWING = [
   'This app makes single wills. A couple need one each, filled in and signed separately.',
 ];
 
-function Bullets({ items, marker, color }: { items: string[]; marker: string; color: string }) {
+function Bullets({
+  items,
+  marker,
+  color,
+}: {
+  items: (string | GuideItem)[];
+  marker: string;
+  color: string;
+}) {
   return (
     <View style={styles.bullets}>
-      {items.map(text => (
-        <View key={text} style={styles.bulletRow}>
-          <Text style={[styles.marker, { color }]}>{marker}</Text>
-          <Text style={styles.bulletText}>{text}</Text>
-        </View>
-      ))}
+      {items.map(item => {
+        const { text, why } = typeof item === 'string' ? { text: item, why: undefined } : item;
+        return (
+          <View key={text} style={styles.bulletRow}>
+            <Text style={[styles.marker, { color }]}>{marker}</Text>
+            {/* The explanation sits inside the bullet rather than beneath the
+                list, so it stays attached to the line it explains however the
+                text wraps. */}
+            <View style={styles.bulletBody}>
+              <Text style={styles.bulletText}>{text}</Text>
+              {why ? <Text style={styles.bulletWhy}>{why}</Text> : null}
+            </View>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -290,11 +332,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 19,
   },
-  bulletText: {
+  bulletBody: {
     flex: 1,
+  },
+  bulletText: {
     fontSize: 13,
     color: C.text,
     lineHeight: 19,
+  },
+  // Set apart from the bullet it belongs to: a rule down the left edge, so a
+  // long explanation reads as an aside rather than as three more bullets.
+  bulletWhy: {
+    fontSize: 12.5,
+    color: C.textLight,
+    lineHeight: 18,
+    marginTop: 6,
+    marginBottom: 4,
+    paddingLeft: 10,
+    borderLeftWidth: 2,
+    borderLeftColor: C.border,
   },
   disclaimer: {
     fontSize: 12,
