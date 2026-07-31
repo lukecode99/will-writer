@@ -189,6 +189,81 @@ const RAW = {
     check: all(noMarkers, advisoryMentions('have not appointed a guardian')),
   },
 
+  'guardians-with-substitute': {
+    // Two first choices and one substitute. The assertion that matters is the
+    // last sentence: a substitute must not join a surviving primary. Appoint a
+    // couple, one of them dies, and the survivor carries on alone.
+    verdict: 'ok',
+    mustContain: [
+      'APPOINTMENT OF GUARDIANS',
+      'Robert Hughes',
+      'Sarah Hughes',
+      'If none of the guardians appointed above is able and willing to act',
+      'Deborah Clark',
+      'that guardian shall act alone and this substitution shall not take effect',
+    ],
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: noMarkers,
+  },
+
+  'guardians-single-plus-substitute': {
+    // One first choice. The clause has to negate in the singular — the first
+    // draft of this wording read "If the guardian appointed above IS able and
+    // willing to act ... then I appoint the substitute", which is the exact
+    // opposite of the intention, and reads plausibly enough to survive a skim.
+    verdict: 'ok',
+    mustContain: [
+      'APPOINTMENT OF GUARDIANS',
+      'If the guardian appointed above is not able and willing to act',
+      'Deborah Clark',
+    ],
+    mustNotContain: [
+      'DRAFT — DO NOT SIGN',
+      'If none of the guardians appointed above',
+      // The joint carve-out is meaningless with one primary, and printing it
+      // would invite the reader to look for a second guardian who is not there.
+      'shall act alone and this substitution shall not take effect',
+    ],
+    check: noMarkers,
+  },
+
+  'spouse-omitted': {
+    // Lawful, so it generates. The warning is the whole point of the scenario:
+    // the app used to flag an omitted child and say nothing about an omitted
+    // spouse, which had it exactly backwards.
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      advisoryMentions('is your spouse and is not left anything in this will'),
+      // The separation point specifically. Someone who has been apart for
+      // years is the likeliest person to assume the claim has lapsed.
+      advisoryMentions('staying separated without divorcing does not change it'),
+    ),
+  },
+
+  'divorced-spouse-not-beneficiary': {
+    // The control. No subsisting marriage, no 1975 spouse claim, no warning —
+    // a check that fires when it should not is worse than none, because it
+    // teaches people to scroll past the review screen.
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryDoesNotMention('is your spouse and is not left anything')),
+  },
+
+  'guardians-substitute-only': {
+    // A substitute with nobody to substitute for appoints no one. Promoting
+    // them to first choice would be the app quietly deciding who raises the
+    // children, so the clause is left out and the reason is spelled out.
+    verdict: 'ok',
+    mustNotContain: [
+      'APPOINTMENT OF GUARDIANS',
+      'Deborah Clark',
+      'DRAFT — DO NOT SIGN',
+    ],
+    check: all(noMarkers, advisoryMentions('substitute guardian but no first choice')),
+  },
+
   'adult-children-stale-guardians': {
     // The appointment stays in the document — it is the user's express choice and
     // deleting it silently would be worse than printing it. It is legally inert

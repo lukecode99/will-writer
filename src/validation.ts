@@ -241,6 +241,16 @@ export function warnings(data: WillData): WillProblem[] {
     });
   }
 
+  // A guardian appointment that appoints nobody. The document still reads as
+  // complete, so it has to be said out loud on Review rather than left to be
+  // discovered when it is relied on.
+  if (hasMinorChildren(data) && data.guardians.length > 0 && !data.guardians.some(g => g.role === 'primary')) {
+    out.push({
+      step: 'guardians',
+      message: 'You named a substitute guardian but no first choice. A substitute only takes over from someone, so as it stands no guardian is appointed.',
+    });
+  }
+
   if (!data.secondaryExecutor.name.trim() && !data.backupExecutor.name.trim()) {
     out.push({
       step: 'executors',
@@ -263,6 +273,26 @@ export function warnings(data: WillData): WillProblem[] {
       ...data.specificGifts.map(g => g.recipient),
     ].map(name => name.trim().toLowerCase()).filter(Boolean),
   );
+  // A spouse or civil partner left out entirely. This was missing while the
+  // equivalent check for children was present, which is the wrong way round:
+  // under the Inheritance (Provision for Family and Dependants) Act 1975 a
+  // surviving spouse is judged on the far more generous "reasonable in all the
+  // circumstances" standard, not the maintenance standard applied to an adult
+  // child, so of the two they are the likelier claim, not the less likely.
+  //
+  // Separation does not change this. The marriage ends on decree absolute or
+  // final order and nothing short of it, so someone who has been apart from
+  // their spouse for years — and who is often the person most surprised by
+  // this — is exactly who needs telling.
+  const partner = data.partnerName.trim();
+  const marriedNow = data.maritalStatus === 'married' || data.maritalStatus === 'civilPartnership';
+  if (marriedNow && partner && !providedFor.has(partner.toLowerCase())) {
+    out.push({
+      step: 'residuary',
+      message: `${partner} is your ${data.maritalStatus === 'married' ? 'spouse' : 'civil partner'} and is not left anything in this will. You are allowed to do that, but a spouse or civil partner has the strongest claim of anyone under the Inheritance (Provision for Family and Dependants) Act 1975 — and staying separated without divorcing does not change it. If this is deliberate, take advice on recording why.`,
+    });
+  }
+
   const omitted = data.children
     .map(child => child.name.trim())
     .filter(name => name && !providedFor.has(name.toLowerCase()));

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { WillData, EMPTY_WILL, Beneficiary, SpecificGift, SubstitutionType } from './types';
+import { WillData, EMPTY_WILL, Beneficiary, Guardian, SpecificGift, SubstitutionType } from './types';
 
 const DOCS_KEY = 'willWriter.docs.v1';
 const CORRUPT_KEY = 'willWriter.docs.v1.corrupt';
@@ -81,10 +81,23 @@ function normalizeGift(g: any): SpecificGift {
   };
 }
 
+function normalizeGuardian(g: any): Guardian {
+  return {
+    id: g.id || Math.random().toString(36).slice(2),
+    name: g.name || '',
+    address: g.address || '',
+    // Drafts saved before the split appointed every guardian jointly. They
+    // reopen as all-primary, which is the same appointment they already had:
+    // reopening a will must not quietly change who it appoints.
+    role: g.role === 'substitute' ? 'substitute' : 'primary',
+  };
+}
+
 function normalizeWill(parsed: any): WillData {
   const merged: WillData = { ...EMPTY_WILL, ...(parsed || {}) };
   merged.beneficiaries = (merged.beneficiaries || []).map(normalizeBeneficiary);
   merged.specificGifts = (merged.specificGifts || []).map(normalizeGift);
+  merged.guardians = (merged.guardians || []).map(normalizeGuardian);
   // Drafts saved before the home screen existed were all the user's own will.
   merged.isForSomeoneElse = parsed?.isForSomeoneElse === true;
   return merged;

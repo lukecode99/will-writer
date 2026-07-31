@@ -9,11 +9,44 @@ export interface Executor {
   address: string;
 }
 
+/**
+ * Where a guardian sits in the appointment.
+ *
+ * 'primary'    — appointed on death, jointly with every other primary.
+ * 'substitute' — appointed only if NO primary is able and willing to act.
+ *
+ * The two-tier split exists because the screen used to show a numbered list —
+ * "Guardian 1", "Guardian 2" — while the will joined them with "and". Anyone
+ * who read that list as first-choice-then-backup got something else entirely:
+ * a joint appointment of all of them. Ordering that people can see has to mean
+ * what it looks like it means.
+ *
+ * Substitutes deliberately wait for ALL primaries to fail rather than any one
+ * of them. Couples are appointed together, and if one of a couple dies the
+ * other should carry on alone rather than suddenly share the children with
+ * whoever was named as the fallback.
+ */
+export type GuardianRole = 'primary' | 'substitute';
+
 export interface Guardian {
   id: string;
   name: string;
   address: string;
+  role: GuardianRole;
 }
+
+/*
+ * Parental responsibility is deliberately NOT a field.
+ *
+ * Only a parent with it — or a guardian or special guardian — can appoint a
+ * guardian at all (Children Act 1989, s.5(3)–(4)); from anyone else the
+ * appointment is void. That was briefly modelled as a required yes/no/unsure
+ * question, and it was the wrong shape: it blocked the step for everyone in
+ * order to catch the small minority who lack it, and a self-assessed answer to
+ * a question about legal status is not reliable enough to key clause-generation
+ * off. It is now an explanatory note on the Guardians screen instead — the
+ * people it applies to are told plainly, and nobody else is stopped.
+ */
 
 export type GiftSubstitutionType = 'residue' | 'named';
 

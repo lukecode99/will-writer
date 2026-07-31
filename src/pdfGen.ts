@@ -398,17 +398,55 @@ export async function generateWillPdf(
   ctx = gap(ctx, 14);
 
   // ── 4. Guardians (conditional) ─────────────────────────────────────────────
-  if (data.guardians.length > 0) {
-    ctx = drawText(ctx, `${nextClause()}. APPOINTMENT OF GUARDIANS`, { font: bold, size: 11 });
-    ctx = gap(ctx, 4);
-    const gNames = data.guardians
+  //
+  // One thing stops this clause being written at all: there is no first-choice
+  // guardian. A substitute with nobody to substitute for appoints no one, and
+  // guessing that they were meant as the primary would change the appointment
+  // behind the user's back.
+  //
+  // Parental responsibility is NOT a condition here. Only someone who has it
+  // can appoint (Children Act 1989 s.5(3)-(4)), but that is explained on the
+  // Guardians screen rather than asked, so there is no answer to gate on — and
+  // gating on a self-assessed one would mean a mistaken "no" silently deleted
+  // a valid appointment. The recital below states the basis; if the testator
+  // turns out not to have parental responsibility the clause is void of its
+  // own accord, which is the same outcome as omitting it.
+  const primaryGuardians = data.guardians.filter(g => g.role === 'primary');
+  const substituteGuardians = data.guardians.filter(g => g.role === 'substitute');
+  const guardianList = (list: typeof data.guardians) =>
+    list
       .map(g => field(g.name, 'guardian name missing') + (g.address.trim() ? ' of ' + inlineAddress(g.address) : ''))
       .join(' and ');
+
+  if (primaryGuardians.length > 0) {
+    ctx = drawText(ctx, `${nextClause()}. APPOINTMENT OF GUARDIANS`, { font: bold, size: 11 });
+    ctx = gap(ctx, 4);
     ctx = drawText(ctx,
       `In the event of my death while any of my children are under the age of 18 years, ` +
-      `I appoint ${gNames} to be the guardian(s) of my minor children.`,
+      `I appoint ${guardianList(primaryGuardians)} to be the guardian(s) of my minor children.`,
       { size: 11 });
     ctx = gap(ctx, 6);
+
+    if (substituteGuardians.length > 0) {
+      // Spelled out rather than left to "if my appointment fails", because the
+      // joint case is the one people get wrong: appoint a couple, one of them
+      // dies, and the question is whether the survivor carries on alone or the
+      // substitute joins them. The survivor does.
+      const joint = primaryGuardians.length > 1;
+      ctx = drawText(ctx,
+        (joint
+          ? `If none of the guardians appointed above is able and willing to act — because they have `
+          : `If the guardian appointed above is not able and willing to act — because they have `) +
+        `died before me, or are unable or unwilling to act — then I appoint ` +
+        `${guardianList(substituteGuardians)} to be the guardian(s) of my minor children in their place.` +
+        (joint
+          ? ` Where any one of the guardians appointed above is able and willing to act, that guardian ` +
+            `shall act alone and this substitution shall not take effect.`
+          : ''),
+        { size: 11 });
+      ctx = gap(ctx, 6);
+    }
+
     // Children Act 1989 s.5(7)-(8). Without this the appointment reads as though
     // it takes effect on death whatever happens, which for most parents is not
     // what the law does: where the child still has a surviving parent with

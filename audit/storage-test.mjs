@@ -214,6 +214,12 @@ await test('field defaults on old drafts', async () => {
     fullName: 'John Thornton',
     beneficiaries: [{ name: 'Fanny', percentage: '100' }],
     specificGifts: [{ recipient: 'Nicholas Higgins', description: 'the mill ledger' }],
+    // Saved before guardians were split into first-choice and substitute, when
+    // the screen showed a numbered list and the will joined them with "and".
+    guardians: [
+      { id: 'gu1', name: 'Hannah Thornton', address: 'Marlborough Mills' },
+      { id: 'gu2', name: 'Adam Bell', address: 'Helstone' },
+    ],
   };
   const { storage } = freshStorage({ [LEGACY_KEY]: JSON.stringify(old) });
   await storage.hydrateStorage();
@@ -225,6 +231,12 @@ await test('field defaults on old drafts', async () => {
     data.specificGifts[0].taxBurden === 'bearsOwnTax');
   check('an old draft is not silently marked as being for someone else',
     data.isForSomeoneElse === false);
+  // The migration that matters most: these two were appointed jointly, and
+  // reopening the will must not turn one of them into a fallback for the
+  // other. Defaulting to 'substitute' would have been the same bug the split
+  // was written to fix, only in reverse.
+  check('guardians saved before the split reopen as joint first choices',
+    data.guardians.length === 2 && data.guardians.every(g => g.role === 'primary'));
 });
 
 console.log(`\n${ran} checks, ${ran - failures} passed, ${failures} failed.`);

@@ -238,11 +238,23 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
           document, so hiding the section made them impossible to remove. */}
       {(showGuardians || data.guardians.length > 0) ? (
         <Section title="Guardians" stepKey="guardians" onEdit={onEdit}>
+          {/* Labelled by tier, not by position. "Guardian 1 / Guardian 2" read
+              as first-choice-then-backup while the will appointed both jointly,
+              which is the mismatch this section now has to make visible. */}
           {data.guardians.length === 0
             ? <Text style={styles.empty}>No guardians appointed</Text>
-            : data.guardians.map((g, i) => (
-              <Row key={g.id} label={`Guardian ${i + 1}`} value={g.name} />
-            ))
+            : data.guardians
+              .filter(g => g.role === 'primary')
+              .map((g, i) => (
+                <Row key={g.id} label={`First choice ${i + 1}`} value={g.name} />
+              ))
+              .concat(
+                data.guardians
+                  .filter(g => g.role === 'substitute')
+                  .map((g, i) => (
+                    <Row key={g.id} label={`Substitute ${i + 1}`} value={g.name} />
+                  )),
+              )
           }
         </Section>
       ) : null}

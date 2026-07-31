@@ -110,8 +110,8 @@ const minorsWithGuardians = {
     { id: 'c2', name: 'Amelia Smith', dob: '12/09/2019' },
   ],
   guardians: [
-    { id: 'gu1', name: 'Robert Hughes', address: '5 Elm Grove, Watford, WD17 1AB' },
-    { id: 'gu2', name: 'Sarah Hughes', address: '5 Elm Grove, Watford, WD17 1AB' },
+    { id: 'gu1', name: 'Robert Hughes', address: '5 Elm Grove, Watford, WD17 1AB', role: 'primary' },
+    { id: 'gu2', name: 'Sarah Hughes', address: '5 Elm Grove, Watford, WD17 1AB', role: 'primary' },
   ],
   beneficiaries: [
     ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
@@ -122,6 +122,68 @@ const minorsWithGuardians = {
 
 // ----------------------------------------- minor children, guardians EMPTY
 const minorsNoGuardians = { ...clone(minorsWithGuardians), guardians: [] };
+
+// ------------------------------- a couple as first choice, plus a substitute
+// The case the old numbered list got wrong. Two primaries are appointed
+// jointly; the substitute waits for BOTH to fail, not either, so that if one
+// of the couple dies the survivor carries on alone.
+const guardiansWithSubstitute = {
+  ...clone(minorsWithGuardians),
+  guardians: [
+    { id: 'gu1', name: 'Robert Hughes', address: '5 Elm Grove, Watford, WD17 1AB', role: 'primary' },
+    { id: 'gu2', name: 'Sarah Hughes', address: '5 Elm Grove, Watford, WD17 1AB', role: 'primary' },
+    { id: 'gu3', name: 'Deborah Clark', address: '9 Ash Lane, Watford, WD18 2CD', role: 'substitute' },
+  ],
+};
+
+// ------------------------------------ one first choice, one substitute
+// Separate scenario because the clause is worded differently in the singular,
+// and the first draft of that wording said the opposite of what it meant.
+const guardiansSinglePlusSubstitute = {
+  ...clone(minorsWithGuardians),
+  guardians: [
+    { id: 'gu1', name: 'Robert Hughes', address: '5 Elm Grove, Watford, WD17 1AB', role: 'primary' },
+    { id: 'gu3', name: 'Deborah Clark', address: '9 Ash Lane, Watford, WD18 2CD', role: 'substitute' },
+  ],
+};
+
+// --------------------------------------- a substitute with nobody to replace
+// Appoints no one. Promoting them to first choice would change the
+// appointment behind the user's back, so the document stays silent and the
+// review explains why.
+const guardiansSubstituteOnly = {
+  ...clone(minorsWithGuardians),
+  guardians: [
+    { id: 'gu3', name: 'Deborah Clark', address: '9 Ash Lane, Watford, WD18 2CD', role: 'substitute' },
+  ],
+};
+
+// ---------------------------------- married, spouse left out of the will
+// Still married on paper, living apart, everything to the children. Lawful,
+// and the single most exposed thing this app can produce: a surviving spouse
+// is judged under the Inheritance (Provision for Family and Dependants) Act
+// 1975 on the generous "reasonable in all the circumstances" standard.
+const spouseOmitted = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Oliver Smith', 'son', '50', { isOwnChild: true }),
+    ben('b2', 'Amelia Smith', 'daughter', '50', { isOwnChild: true }),
+  ],
+};
+
+// ------------------------ divorced, ex-spouse named but not a beneficiary
+// The control for the scenario above. The marriage has ended, so there is no
+// 1975 spouse claim and the warning must NOT fire — otherwise it becomes
+// noise that people learn to scroll past on the one screen where they cannot
+// afford to.
+const divorcedSpouseNotBeneficiary = {
+  ...clone(baseline),
+  maritalStatus: 'divorced',
+  beneficiaries: [
+    ben('b1', 'Oliver Smith', 'son', '50', { isOwnChild: true }),
+    ben('b2', 'Amelia Smith', 'daughter', '50', { isOwnChild: true }),
+  ],
+};
 
 // ------------------------------------ specific gifts only, no residuary
 const giftsOnlyNoResiduary = {
@@ -288,7 +350,7 @@ const noExecutor = {
 // silently deleting an appointment the user made is the worse failure.
 const adultChildrenStaleGuardians = {
   ...clone(baseline),
-  guardians: [{ id: 'gu1', name: 'Robert Hughes', address: '5 Elm Grove, Watford' }],
+  guardians: [{ id: 'gu1', name: 'Robert Hughes', address: '5 Elm Grove, Watford', role: 'primary' }],
 };
 
 // Single, no partner, no children — the family declaration clause should be
@@ -337,6 +399,11 @@ module.exports = {
   'single-beneficiary-100': single100,
   'minors-with-guardians': minorsWithGuardians,
   'minors-no-guardians': minorsNoGuardians,
+  'guardians-with-substitute': guardiansWithSubstitute,
+  'guardians-single-plus-substitute': guardiansSinglePlusSubstitute,
+  'spouse-omitted': spouseOmitted,
+  'divorced-spouse-not-beneficiary': divorcedSpouseNotBeneficiary,
+  'guardians-substitute-only': guardiansSubstituteOnly,
   'gifts-only-no-residuary': giftsOnlyNoResiduary,
   'thirty-specific-gifts': thirtyGifts,
   'charity-named-sub-blank': charityNamedBlankSub,
