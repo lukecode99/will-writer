@@ -86,3 +86,26 @@ export function formatDobLong(raw: string): string {
   ];
   return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
+
+/**
+ * The list of children read back to the user for confirmation.
+ *
+ * It names them rather than counting them. "You have listed 2 children" is
+ * agreed with by reflex; "Oliver Smith, Amelia Smith" is the only form that can
+ * be compared against the family someone actually has, and the whole purpose of
+ * the question is to make that comparison happen once.
+ *
+ * A child added but not yet named is shown as unnamed rather than dropped —
+ * a blank row is exactly the state where someone is halfway through and should
+ * not be confirming anything.
+ */
+export function childrenSummary(children: { name: string }[]): string {
+  if (children.length === 0) return 'You have not listed any children.';
+  const names = children.map(c => c.name.trim() || 'a child with no name yet');
+  const listed = names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return names.length === 1
+    ? `You have listed one child: ${listed}.`
+    : `You have listed ${names.length} children: ${listed}.`;
+}

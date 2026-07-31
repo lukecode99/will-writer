@@ -252,6 +252,29 @@ export function warnings(data: WillData): WillProblem[] {
     });
   }
 
+  // A gift to the testator's own child where the chosen substitution displaces
+  // Wills Act 1837 s.33 — the grandchildren take nothing.
+  //
+  // This was already flagged, but only in a box on the residuary screen, next to
+  // the option that caused it. That is the right place to say it first and the
+  // wrong place to say it only: it is on screen at the moment of the choice and
+  // gone by the time anyone reviews what they have made. Review is the last page
+  // before signing and the one place the whole will is looked at together, so a
+  // consequence this size has to survive to it.
+  //
+  // Named individually. "One of your children" would be true and useless — with
+  // three children and one changed option, the user needs to know which.
+  const s33Overridden = data.beneficiaries
+    .filter(b => b.isOwnChild && b.substitution.type !== 'per-stirpes')
+    .map(b => b.name.trim())
+    .filter(Boolean);
+  if (s33Overridden.length > 0) {
+    out.push({
+      step: 'residuary',
+      message: `If ${s33Overridden.join(' or ')} died before you, their share would not go to their own children. By law it normally would (Wills Act 1837, section 33), and the option you chose overrides that. Your will now says so in terms. If you have grandchildren through ${s33Overridden.length === 1 ? 'them' : 'either of them'}, check this is what you meant.`,
+    });
+  }
+
   if (!data.secondaryExecutor.name.trim() && !data.backupExecutor.name.trim()) {
     out.push({
       step: 'executors',
@@ -263,6 +286,24 @@ export function warnings(data: WillData): WillProblem[] {
     out.push({
       step: 'family',
       message: 'You said you are married or in a civil partnership but did not give your partner\'s name.',
+    });
+  }
+
+  // The Family step will not let anyone past without confirming the list of
+  // children is complete, so this should be unreachable by anyone filling the
+  // will in from the start.
+  //
+  // It is here for the drafts that were saved before the question existed. They
+  // reopen unconfirmed, at whatever step they were left on, which may be well
+  // past this one — and the person resuming has no reason to walk backwards
+  // through steps they already finished. Review is the one screen they are
+  // guaranteed to see.
+  if (!data.childrenConfirmed) {
+    out.push({
+      step: 'family',
+      message: data.children.length === 0
+        ? 'You have not listed any children, and have not confirmed that is right. Go back to Partner & Children and check.'
+        : 'You have not confirmed that every one of your children is listed. Go back to Partner & Children and check — a child left out can apply to the court for provision from your estate.',
     });
   }
 

@@ -188,6 +188,39 @@ function substitutionClause(b: Beneficiary): string {
   const name = field(b.name, 'beneficiary name missing');
   const namePoss = `${name}'s`;
 
+  /**
+   * Words disapplying Wills Act 1837 s.33, for a gift to the testator's own
+   * child where the substitution chosen is not per stirpes.
+   *
+   * s.33 operates by default: a gift to a child of the testator who dies first
+   * leaving issue passes to that issue, unless a contrary intention appears *by
+   * the will*. Choosing "to a named person" or "split between the others" for
+   * your own child is exactly that contrary intention — the grandchildren take
+   * nothing — and until now the document said so nowhere. It recorded the
+   * substitution and stayed silent on the statute it displaced, which leaves two
+   * problems.
+   *
+   * The first is legal: whether a substitution clause displaces s.33 is a
+   * question of construction, and it is one that gets argued. Saying it in terms
+   * removes the argument. A will is read after the only person who could explain
+   * it is dead, so anything left to inference is left to a dispute.
+   *
+   * The second is plainer. Someone reading their own will back should be able to
+   * see that their grandchildren have been cut out of that share. The app warns
+   * about it on the way through, but the will is the thing that gets printed,
+   * signed and kept in a drawer for twenty years, and it was the one place that
+   * did not mention it.
+   *
+   * Nothing is added in the per-stirpes case: the express clause and s.33 say
+   * the same thing, and words put into the operative part of a will to say that
+   * a provision agrees with the general law are words that can only be argued
+   * over later.
+   */
+  const s33 = b.isOwnChild
+    ? ` ${name} is my child. I direct that section 33 of the Wills Act 1837 shall not apply to this ` +
+      `gift, so that ${namePoss} children shall not take ${namePoss} share in ${namePoss} place.`
+    : '';
+
   if (sub.type === 'per-stirpes') {
     return (
       `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
@@ -202,7 +235,7 @@ function substitutionClause(b: Beneficiary): string {
     const named = field(sub.namedPerson, 'substitute name missing');
     return (
       `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
-      `to ${named} absolutely.`
+      `to ${named} absolutely.${s33}`
     );
   }
 
@@ -211,7 +244,7 @@ function substitutionClause(b: Beneficiary): string {
   // and had no place in the operative part of a will.
   return (
     `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall be ` +
-    `divided among the other surviving residuary beneficiaries in proportion to their respective shares.`
+    `divided among the other surviving residuary beneficiaries in proportion to their respective shares.${s33}`
   );
 }
 

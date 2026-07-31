@@ -105,6 +105,9 @@ function normalizeWill(parsed: any): WillData {
   merged.guardians = (merged.guardians || []).map(normalizeGuardian);
   // Drafts saved before the home screen existed were all the user's own will.
   merged.isForSomeoneElse = parsed?.isForSomeoneElse === true;
+  // A draft written before the question existed was never asked it. Only an
+  // explicit true counts — anything else reopens unconfirmed and asks.
+  merged.childrenConfirmed = parsed?.childrenConfirmed === true;
   return merged;
 }
 

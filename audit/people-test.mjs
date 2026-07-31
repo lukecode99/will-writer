@@ -24,6 +24,7 @@ require('sucrase/register/ts');
 const { PARTNER_REF, childRef, knownPeople, knownRefs, syncLinkedBeneficiaries } =
   require(join(ROOT, 'src/people.ts'));
 const { warnings, blockingProblems } = require(join(ROOT, 'src/validation.ts'));
+const { childrenSummary } = require(join(ROOT, 'src/family.ts'));
 const { EMPTY_WILL } = require(join(ROOT, 'src/types.ts'));
 
 let failures = 0;
@@ -66,6 +67,9 @@ function family() {
       { id: 'c1', name: 'Oliver Smith', dob: '01/06/2004' },
       { id: 'c2', name: 'Amelia Smith', dob: '12/09/2006' },
     ],
+    // Anyone who reached the residuary step got past the Family step, and that
+    // step cannot be passed without answering this.
+    childrenConfirmed: true,
     primaryExecutor: { name: 'Robert Hughes', address: '9 Mill Lane' },
     beneficiaries: [
       ben('b1', 'Jane Elizabeth Smith', '50', { relationship: 'wife', linkedPersonId: PARTNER_REF }),
@@ -273,6 +277,58 @@ const messages = data => warnings(data).map(w => w.message).join(' | ');
   // nothing.
   check('a duplicate name does not stop the will being generated',
     blockingProblems(thrice).every(p => !p.message.includes('more than once')));
+}
+
+// --- confirming the list of children is complete ----------------------------
+//
+// The one gap none of the checks above can close. Everything else in this file
+// compares two screens against each other; a child who was never typed in
+// appears on neither, so there is nothing to compare and the will comes out
+// clean. The only available mechanism is to ask, and to make the asking count
+// for something.
+{
+  const named = childrenSummary([{ name: 'Oliver Smith' }, { name: 'Amelia Smith' }]);
+  // Naming them is the entire point. A count is agreed with by reflex; a list
+  // of names is the only form that can be checked against a real family.
+  check('the children are read back by name', named.includes('Oliver Smith') && named.includes('Amelia Smith'));
+  check('and counted, so a missing one is visible two ways', named.includes('2 children'));
+
+  check('one child is not called "1 children"',
+    childrenSummary([{ name: 'Oliver Smith' }]) === 'You have listed one child: Oliver Smith.');
+
+  check('no children is stated rather than left blank',
+    childrenSummary([]) === 'You have not listed any children.');
+
+  // A half-finished row is precisely the state where nobody should be
+  // confirming anything, so it is shown rather than quietly skipped.
+  const halfDone = childrenSummary([{ name: 'Oliver Smith' }, { name: '  ' }]);
+  check('a child added but not yet named is still shown', halfDone.includes('no name yet'));
+
+  const unconfirmed = family();
+  unconfirmed.childrenConfirmed = false;
+  const said = messages(unconfirmed);
+  check('an unconfirmed list is raised on review', said.includes('not confirmed that every one of your children is listed'));
+
+  // It has to be a warning. The will is not defective — an unanswered question
+  // is not a defect — and refusing to produce a finished document over a tick
+  // the user was never shown is the worse failure.
+  check('but it does not block the will', blockingProblems(unconfirmed).every(p => !p.message.includes('confirmed')));
+
+  check('a confirmed list is not raised at all',
+    !messages(family()).includes('confirmed that every one of your children'));
+
+  // Different wording for the childless: "every one of your children is
+  // listed" is nonsense when the answer is none, and a question that reads as
+  // nonsense gets dismissed rather than answered.
+  const noKids = family();
+  noKids.children = [];
+  noKids.childrenConfirmed = false;
+  noKids.beneficiaries = noKids.beneficiaries.filter(b => !b.isOwnChild);
+  const noKidsSaid = messages(noKids);
+  check('someone with no children is asked whether that is right',
+    noKidsSaid.includes('have not listed any children, and have not confirmed that is right'));
+  check('and is not told a child might be missing from a list',
+    !noKidsSaid.includes('every one of your children is listed'));
 }
 
 console.log(`\n${ran} checks, ${ran - failures} passed, ${failures} failed.`);

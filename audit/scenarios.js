@@ -9,6 +9,10 @@ const EMPTY = {
   partnerName: '',
   partnerAddress: '',
   children: [],
+  // Every fixture here describes someone who got through the Family step, and
+  // that step cannot be passed without answering this. The one scenario that
+  // needs it false sets it false, and says why.
+  childrenConfirmed: true,
   primaryExecutor: { name: '', address: '' },
   secondaryExecutor: { name: '', address: '' },
   backupExecutor: { name: '', address: '' },
@@ -321,6 +325,79 @@ const decimalThirds = {
   ],
 };
 
+// ------------------------------------------------ s.33 displaced, by naming
+//
+// Oliver's share goes to his brother-in-law rather than to Oliver's children.
+// That is a lawful choice and a large one: Wills Act 1837 s.33 would otherwise
+// pass it to the grandchildren, and choosing a named substitute for your own
+// child takes it away from them. Whether a substitution clause displaces s.33 is
+// a question of construction and it is one that gets argued, so the will has to
+// say it outright rather than leave it to be inferred by someone reading it
+// after the only person who could explain it is dead.
+const ownChildNamedSubstitute = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
+    ben('b2', 'Oliver Smith', 'son', '30', {
+      isOwnChild: true,
+      substitution: { type: 'named', namedPerson: 'Michael Doyle' },
+    }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// ------------------------------------------------ s.33 displaced, by pro-rata
+//
+// The same displacement reached by the option least likely to look like one.
+// "Split between the others" reads as tidying up a loose end, not as cutting
+// your grandchildren out of a share, which is exactly why it needs saying.
+const ownChildProRata = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
+    ben('b2', 'Oliver Smith', 'son', '30', {
+      isOwnChild: true,
+      substitution: { type: 'pro-rata', namedPerson: '' },
+    }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// ------------------------------------------- pro-rata for someone else's child
+//
+// The control. Same substitution, same everything, except this beneficiary is
+// not the testator's child — so s.33 was never in play and the will must not
+// claim to disapply it. A statute recited into a will that it has nothing to do
+// with is not harmless padding; it invites the reader to work out what was meant
+// by it.
+const nonChildProRata = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50', {
+      substitution: { type: 'pro-rata', namedPerson: '' },
+    }),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// ------------------------------------------- the list of children unconfirmed
+//
+// A draft saved before the confirmation existed, reopened. Everything in it is
+// complete and internally consistent — which is exactly the problem the
+// confirmation exists for. A child who was never typed in leaves no trace for
+// any cross-screen check to find, so the will passes every test right up to
+// the point it is read out.
+//
+// It must be a warning and not a block. The will is not defective; an
+// unanswered question is not a defect, and refusing to produce a document
+// someone has already finished, over a tick they have never been shown, is a
+// worse outcome than producing it with the point made plainly on Review.
+const childrenUnconfirmed = {
+  ...clone(baseline),
+  childrenConfirmed: false,
+};
+
 // A named substitution with nobody named.
 const namedSubBlank = {
   ...clone(baseline),
@@ -474,6 +551,10 @@ module.exports = {
   'spouse-linked-different-spelling': spouseLinkedDifferentSpelling,
   'beneficiary-named-twice': beneficiaryNamedTwice,
   'beneficiary-link-orphaned': beneficiaryLinkOrphaned,
+  'own-child-named-substitute': ownChildNamedSubstitute,
+  'own-child-pro-rata': ownChildProRata,
+  'non-child-pro-rata': nonChildProRata,
+  'children-unconfirmed': childrenUnconfirmed,
   'zero-residuary': zeroResiduary,
   'percentages-90': pct90,
   'percentages-110': pct110,

@@ -80,6 +80,46 @@ function noMarkers({ shown, strict }) {
   return found.length ? [`finalised will still contains gap markers: ${[...new Set(found)].join(', ')}`] : [];
 }
 
+/**
+ * Matches the document with its line breaks flattened.
+ *
+ * `mustContain` compares against the text as laid out, so a needle longer than
+ * one line is really an assertion about where the wrap happens to fall. Rename
+ * a beneficiary three paragraphs earlier and it starts failing for a reason
+ * that has nothing to do with what it was testing. The existing entries live
+ * with that by keeping needles short enough to fit on a line — a rule that has
+ * to be remembered every time and gives no warning at all when it is forgotten.
+ *
+ * The negative form is the one that actually bites: a `mustNotContain` needle
+ * that straddles a line break passes, and a passing assertion is not something
+ * anyone goes looking at. That is a test reporting the absence of words that
+ * are right there in the document.
+ *
+ * So: use these wherever the phrase that matters is longer than a few words.
+ * They assert what the will says, and say nothing about how it was laid out.
+ */
+function flatten(text) {
+  return text.replace(/\s+/g, ' ');
+}
+
+function documentSays(...needles) {
+  return ({ shown }) => {
+    const flat = flatten(shown);
+    return needles
+      .filter(n => !flat.includes(flatten(n)))
+      .map(n => `document does not say ${JSON.stringify(n)}`);
+  };
+}
+
+function documentDoesNotSay(...needles) {
+  return ({ shown }) => {
+    const flat = flatten(shown);
+    return needles
+      .filter(n => flat.includes(flatten(n)))
+      .map(n => `document says ${JSON.stringify(n)} and must not`);
+  };
+}
+
 function advisoryMentions(...needles) {
   return ({ advisories }) =>
     needles
@@ -299,6 +339,67 @@ const RAW = {
     mustContain: ['• Oliver Smith (son) — 30%'],
     mustNotContain: ['DRAFT — DO NOT SIGN'],
     check: all(noMarkers, advisoryMentions('no longer', 'family details')),
+  },
+
+  // ── Wills Act 1837 s.33, and displacing it on purpose ─────────────────────
+  'own-child-named-substitute': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays(
+        "Oliver Smith's share shall pass to Michael Doyle absolutely.",
+        // The words that make the intention express rather than a matter of
+        // construction, and the reason this scenario exists.
+        'Oliver Smith is my child. I direct that section 33 of the Wills Act 1837 shall not apply ' +
+          "to this gift, so that Oliver Smith's children shall not take Oliver Smith's share in Oliver Smith's place.",
+      ),
+      advisoryMentions('would not go to their own children', 'Oliver Smith'),
+    ),
+  },
+
+  'own-child-pro-rata': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays(
+        "Oliver Smith's share shall be divided among the other surviving residuary beneficiaries",
+        'Oliver Smith is my child. I direct that section 33 of the Wills Act 1837 shall not apply',
+      ),
+      advisoryMentions('would not go to their own children'),
+    ),
+  },
+
+  'non-child-pro-rata': {
+    // Jane is the wife, so s.33 never applied to her share, and the two
+    // children keep per-stirpes — which agrees with the section rather than
+    // displacing it. Nothing in this document should mention it at all.
+    //
+    // Reciting a statute into a will that has nothing to do with it is not
+    // harmless padding. It is an invitation to whoever reads the will to work
+    // out what was meant by putting it there.
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentDoesNotSay('section 33', 'is my child'),
+      advisoryDoesNotMention('would not go to their own children'),
+    ),
+  },
+
+  // ── the list of children unconfirmed ──────────────────────────────────────
+  'children-unconfirmed': {
+    // Warned, not blocked, and the document itself is untouched. The
+    // confirmation is a question we put to the user, not a term of the will,
+    // and it has no business appearing in what they sign.
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      advisoryMentions('not confirmed that every one of your children is listed'),
+      documentDoesNotSay('confirmed that every one of your children'),
+    ),
   },
 
   'divorced-spouse-not-beneficiary': {

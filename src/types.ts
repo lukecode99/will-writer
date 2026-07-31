@@ -139,6 +139,30 @@ export interface WillData {
   partnerAddress: string;
   children: Child[];
 
+  /**
+   * That the list of children above has been read back and confirmed complete.
+   *
+   * Every other check in this app compares one screen against another — a child
+   * on the Family step with no share on the residuary step, a spouse named but
+   * not provided for. A child who was never typed in at all is outside all of
+   * it: there is nothing to compare against, and the will reads as consistent
+   * and complete right up to the point it is read out.
+   *
+   * That omission is the most expensive mistake this app can help someone make.
+   * An adult child left out of a parent's will is the standard claim under the
+   * Inheritance (Provision for Family and Dependants) Act 1975, brought against
+   * an estate with nobody left to say what was meant. The people most likely to
+   * make it are the ones the hint above does not reach: a child from an earlier
+   * relationship, an estranged child, an adult child who is doing fine and did
+   * not come to mind.
+   *
+   * So it is stored, not merely displayed — a record that the question was put
+   * and answered, surviving a close and reopen. Old drafts default to false:
+   * being asked once more costs a tap, assuming an answer nobody gave is the
+   * failure being fixed.
+   */
+  childrenConfirmed: boolean;
+
   primaryExecutor: Executor;
   secondaryExecutor: Executor;
   backupExecutor: Executor;
@@ -163,6 +187,7 @@ export const EMPTY_WILL: WillData = {
   partnerName: '',
   partnerAddress: '',
   children: [],
+  childrenConfirmed: false,
   primaryExecutor: { name: '', address: '' },
   secondaryExecutor: { name: '', address: '' },
   backupExecutor: { name: '', address: '' },

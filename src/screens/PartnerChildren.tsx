@@ -1,8 +1,8 @@
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { WillData, Child } from '../types';
-import { dobError, parseUkDate, ageInYears } from '../family';
-import { shared } from './shared';
+import { dobError, parseUkDate, ageInYears, childrenSummary } from '../family';
+import { shared, C } from './shared';
 
 interface Props {
   data: WillData;
@@ -50,10 +50,21 @@ function ageHint(dob: string): string {
 export default function PartnerChildren({ data, onChange, onNext, onBack }: Props) {
   const hasPartner = !!(data.partnerName || data.partnerAddress);
   const dobProblems = data.children.map(child => childDobError(child.dob));
-  const canContinue = dobProblems.every(problem => !problem);
+  const canContinue = dobProblems.every(problem => !problem) && data.childrenConfirmed;
 
+  /**
+   * Adding or removing a child un-answers the question, because the list that
+   * was confirmed is not the list on screen any more.
+   *
+   * Renaming one deliberately does not. A rename is the same people spelled
+   * correctly, and clearing the tick on every keystroke would make correcting a
+   * typo feel like an accusation.
+   */
   function addChild() {
-    onChange({ children: [...data.children, { id: uid(), name: '', dob: '' }] });
+    onChange({
+      children: [...data.children, { id: uid(), name: '', dob: '' }],
+      childrenConfirmed: false,
+    });
   }
 
   function updateChild(id: string, field: keyof Child, value: string) {
@@ -63,7 +74,10 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
   }
 
   function removeChild(id: string) {
-    onChange({ children: data.children.filter(c => c.id !== id) });
+    onChange({
+      children: data.children.filter(c => c.id !== id),
+      childrenConfirmed: false,
+    });
   }
 
   return (
@@ -98,7 +112,9 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
       ) : null}
 
       <Text style={shared.sectionTitle}>Children</Text>
-      <Text style={shared.hint}>Include all biological, adopted, and step-children. We use date of birth to determine whether guardians are needed.</Text>
+      {/* Who counts is settled in the confirmation below, where the list can
+          actually be read back. Saying it twice invites the two to drift apart. */}
+      <Text style={shared.hint}>Add each of your children. We use date of birth to work out whether guardians are needed.</Text>
 
       {data.children.map((child, i) => (
         <View key={child.id} style={shared.card}>
@@ -134,6 +150,38 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
         <Text style={shared.addBtnText}>+ Add a child</Text>
       </TouchableOpacity>
 
+      {/*
+        Placed here, below the list and above Continue, rather than with the
+        hint at the top. At the top there is nothing to check it against; here
+        the list exists and can be read back. It is the last thing between this
+        step and the rest of the will for the same reason.
+      */}
+      <View style={styles.confirmCard}>
+        <Text style={styles.confirmSummary}>{childrenSummary(data.children)}</Text>
+        <Text style={styles.confirmBody}>
+          Include every child of yours — adopted children, children from an earlier relationship,
+          and adult children who are financially independent. A child you leave out can apply to
+          the court for provision from your estate after your death, and you will not be there to
+          explain what you meant. Add a step-child only if you want them treated as your child;
+          unless you have adopted them, they are not automatically.
+        </Text>
+        <TouchableOpacity
+          style={styles.confirmRow}
+          onPress={() => onChange({ childrenConfirmed: !data.childrenConfirmed })}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: data.childrenConfirmed }}
+        >
+          <View style={[styles.box, data.childrenConfirmed ? styles.boxChecked : null]}>
+            {data.childrenConfirmed ? <Text style={styles.tick}>✓</Text> : null}
+          </View>
+          <Text style={styles.confirmLabel}>
+            {data.children.length === 0
+              ? 'I confirm I have no children.'
+              : 'I confirm this is every child I have.'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <TouchableOpacity
         style={[shared.primaryBtn, canContinue ? null : shared.btnDisabled]}
         onPress={() => { if (canContinue) onNext(); }}
@@ -147,3 +195,57 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  confirmCard: {
+    backgroundColor: '#FFF8E6',
+    borderWidth: 1,
+    borderColor: '#E5C76B',
+    borderRadius: 10,
+    padding: 16,
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  confirmSummary: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.text,
+    marginBottom: 8,
+  },
+  confirmBody: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: C.textLight,
+    marginBottom: 14,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  box: {
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: C.primary,
+    backgroundColor: C.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  boxChecked: {
+    backgroundColor: C.primary,
+  },
+  tick: {
+    color: C.surface,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  confirmLabel: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.text,
+  },
+});

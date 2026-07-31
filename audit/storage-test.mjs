@@ -243,6 +243,12 @@ await test('field defaults on old drafts', async () => {
   // by name, so this draft behaves exactly as it did before the picker existed.
   check('an old beneficiary reopens unlinked, not guessed at',
     data.beneficiaries[0].linkedPersonId === '');
+  // This draft was written before anyone was asked whether the list of children
+  // was complete, so the honest answer is that we do not know. Defaulting it to
+  // true would convert "never asked" into "confirmed", which is the one value
+  // the field must never take without a person putting it there.
+  check('a draft saved before the question was asked reopens unanswered',
+    data.childrenConfirmed === false);
 });
 
 console.log(`\n${ran} checks, ${ran - failures} passed, ${failures} failed.`);
