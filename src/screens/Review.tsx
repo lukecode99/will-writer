@@ -355,8 +355,12 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
         <Text style={shared.secondaryBtnText}>Back</Text>
       </TouchableOpacity>
 
+      {/* This used to be "Start over", which wiped the answers. Now that the
+          app holds more than one will, the same tap means "leave this one and
+          go back to the list" — and deleting a will is a deliberate act on the
+          home screen, behind a confirmation, rather than a link next to Back. */}
       <TouchableOpacity style={{ marginTop: 20, alignItems: 'center' }} onPress={onRestart}>
-        <Text style={{ color: C.textLight, fontSize: 13 }}>Start over</Text>
+        <Text style={{ color: C.textLight, fontSize: 13 }}>Back to my wills</Text>
       </TouchableOpacity>
     </ScrollView>
   );

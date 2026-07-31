@@ -6,7 +6,10 @@
     "start": "expo start",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "export:web": "npx expo export --platform web --public-url https://lukecode99.github.io/will-writer"
+    "export:web": "npx expo export --platform web --public-url https://lukecode99.github.io/will-writer",
+    "audit": "node audit/run.mjs",
+    "test:storage": "node audit/storage-test.mjs",
+    "test": "node audit/run.mjs && node audit/storage-test.mjs"
   },
   "dependencies": {
     "@babel/runtime": "^8.0.0",

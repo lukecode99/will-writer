@@ -62,6 +62,18 @@ export type MaritalStatus = 'single' | 'married' | 'civilPartnership' | 'divorce
 export type BurialPreference = 'burial' | 'cremation' | 'noPreference' | '';
 
 export interface WillData {
+  /**
+   * Whether this will is being filled in on behalf of someone else.
+   *
+   * It changes nothing in the document — a will is always written in the
+   * testator's own voice, and it is always the testator who has to sign it.
+   * What it changes is the wording on screen, and the warning shown on the way
+   * in: a will prepared by someone who stands to benefit under it is the
+   * classic set of facts for a challenge on knowledge and approval or undue
+   * influence, so the person doing the typing needs to be told that.
+   */
+  isForSomeoneElse: boolean;
+
   fullName: string;
   address: string;
   dob: string;
@@ -87,6 +99,7 @@ export interface WillData {
 }
 
 export const EMPTY_WILL: WillData = {
+  isForSomeoneElse: false,
   fullName: '',
   address: '',
   dob: '',

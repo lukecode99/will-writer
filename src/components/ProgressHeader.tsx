@@ -11,6 +11,10 @@ interface Props {
   title?: string;
   saveState: SaveState;
   onSave: () => void;
+  /** Leave this will and go back to the list. Saves on the way out. */
+  onHome: () => void;
+  /** Shown instead of the app name when filling a will in for someone else. */
+  subject?: string;
 }
 
 const SAVE_LABEL: Record<SaveState, string> = {
@@ -20,7 +24,15 @@ const SAVE_LABEL: Record<SaveState, string> = {
   error: 'Not saved',
 };
 
-export default function ProgressHeader({ step, totalSteps, title, saveState, onSave }: Props) {
+export default function ProgressHeader({
+  step,
+  totalSteps,
+  title,
+  saveState,
+  onSave,
+  onHome,
+  subject,
+}: Props) {
   const insets = useSafeAreaInsets();
   const current = step + 1;
   const pct = Math.round((current / totalSteps) * 100);
@@ -35,8 +47,22 @@ export default function ProgressHeader({ step, totalSteps, title, saveState, onS
           {/* Title and step stack vertically rather than sitting side by side,
               which leaves room for the save control on the right without it
               crowding the step name on a narrow phone. */}
+          <TouchableOpacity
+            style={styles.homeBtn}
+            onPress={onHome}
+            accessibilityRole="button"
+            accessibilityLabel="Save and go back to your wills"
+          >
+            <Text style={styles.homeText}>‹</Text>
+          </TouchableOpacity>
+
           <View style={styles.titleBlock}>
-            <Text style={styles.appTitle}>Will Writer</Text>
+            {/* Whose will this is matters more than the app's own name once you
+                can be holding several — otherwise every screen looks identical
+                whether you are editing your will or your mother's. */}
+            <Text style={styles.appTitle} numberOfLines={1}>
+              {subject || 'Will Writer'}
+            </Text>
             <Text style={styles.stepLabel} numberOfLines={1}>
               {title ? `${title} · step ${current} of ${totalSteps}` : `Step ${current} of ${totalSteps}`}
             </Text>
@@ -87,6 +113,21 @@ const styles = StyleSheet.create({
   },
   titleBlock: {
     flex: 1,
+  },
+  homeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    marginLeft: -4,
+  },
+  homeText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '700',
   },
   appTitle: {
     color: '#FFFFFF',

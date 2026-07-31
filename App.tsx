@@ -9,15 +9,18 @@ import {
   AppState,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { WillData, EMPTY_WILL } from './src/types';
+import { WillData } from './src/types';
 import {
   hydrateStorage,
   loadWillData,
   saveWillData,
   loadStep,
   saveStep,
-  clearWillData,
   flushWill,
+  listWills,
+  createWill,
+  deleteWill,
+  WillSummary,
 } from './src/storage';
 import { notify } from './src/platform';
 import { hasMinorChildren } from './src/family';
@@ -32,6 +35,7 @@ import SpecificGifts from './src/screens/SpecificGifts';
 import ResiduaryEstate from './src/screens/ResiduaryEstate';
 import FuneralWishes from './src/screens/FuneralWishes';
 import Review from './src/screens/Review';
+import Home from './src/screens/Home';
 
 /**
  * The wizard's steps, by absolute index.
@@ -55,15 +59,22 @@ const STEP: Record<StepKey, number> = {
   review: 7,
 };
 
+interface WizardProps {
+  /** Which saved will is being edited. Mounted under `key={id}`, so the
+   *  `useState` initialisers below re-read storage when it changes. */
+  id: string;
+  onHome: () => void;
+}
+
 /**
  * The wizard itself. Split out from `App` so that its `useState` initialisers,
  * which read the saved draft synchronously, cannot run until storage has been
  * read off disk -- see `hydrateStorage`.
  */
-function Wizard() {
+function Wizard({ id, onHome }: WizardProps) {
   const insets = useSafeAreaInsets();
-  const [data, setData] = useState<WillData>(() => loadWillData());
-  const [step, setStep] = useState<number>(() => loadStep());
+  const [data, setData] = useState<WillData>(() => loadWillData(id));
+  const [step, setStep] = useState<number>(() => loadStep(id));
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -73,19 +84,19 @@ function Wizard() {
   const update = useCallback((updates: Partial<WillData>) => {
     setData(prev => {
       const next = { ...prev, ...updates };
-      saveWillData(next);
+      saveWillData(id, next);
       return next;
     });
     // Answers are autosaved, so a "Saved ✓" left sitting on screen while the
     // user carries on typing would be describing an older draft than the one in
     // front of them. Drop back to the neutral label as soon as anything changes.
     setSaveState(prev => (prev === 'saved' ? 'idle' : prev));
-  }, []);
+  }, [id]);
 
   // Persist step
   useEffect(() => {
-    saveStep(step);
-  }, [step]);
+    saveStep(id, step);
+  }, [id, step]);
 
   const save = useCallback(async () => {
     if (resetTimer.current) clearTimeout(resetTimer.current);
@@ -145,11 +156,14 @@ function Wizard() {
     setStep(STEP[key]);
   }
 
-  function restart() {
-    clearWillData();
-    setData({ ...EMPTY_WILL });
-    setStep(0);
-    setSaveState('idle');
+  // Leaving a will is not the same as discarding it. Answers are already
+  // autosaved, but the last keystroke can still be in flight, so the flush
+  // happens before the list is rebuilt from storage — otherwise the home screen
+  // can show a stale name for the will that was just being edited.
+  function leave() {
+    flushWill()
+      .catch(err => console.warn('Flush on leaving failed', err))
+      .finally(onHome);
   }
 
   const STEP_TITLES = [
@@ -178,6 +192,12 @@ function Wizard() {
         title={isReview ? 'Review' : stepTitle}
         saveState={saveState}
         onSave={save}
+        onHome={leave}
+        subject={
+          data.isForSomeoneElse
+            ? `${data.fullName.trim() || 'Their'}${data.fullName.trim() ? "'s" : ''} will`
+            : undefined
+        }
       />
 
       {/* Without this the keyboard covers the lower half of every form, and
@@ -216,7 +236,7 @@ function Wizard() {
               data={data}
               onEdit={goToStep}
               onBack={prevStep}
-              onRestart={restart}
+              onRestart={leave}
             />
           )}
         </View>
@@ -227,16 +247,48 @@ function Wizard() {
 
 export default function App() {
   const [ready, setReady] = useState(false);
+  const [wills, setWills] = useState<WillSummary[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   useEffect(() => {
-    hydrateStorage().then(() => setReady(true));
+    hydrateStorage().then(() => {
+      setWills(listWills());
+      setReady(true);
+    });
   }, []);
+
+  function open(id: string) {
+    setActiveId(id);
+  }
+
+  function create(isForSomeoneElse: boolean) {
+    setActiveId(createWill(isForSomeoneElse));
+  }
+
+  function remove(id: string) {
+    deleteWill(id);
+    setWills(listWills());
+  }
+
+  // The list is rebuilt on the way out rather than kept in sync while editing:
+  // it is only ever on screen when no will is open, and rebuilding it on every
+  // keystroke would re-render the whole home screen behind the wizard.
+  function goHome() {
+    setActiveId(null);
+    setWills(listWills());
+  }
 
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="light-content" backgroundColor={C.primary} />
       {ready ? (
-        <Wizard />
+        activeId ? (
+          // Keyed by id so that opening a different will remounts the wizard,
+          // which is what re-runs the initialisers that read it out of storage.
+          <Wizard key={activeId} id={activeId} onHome={goHome} />
+        ) : (
+          <Home wills={wills} onCreate={create} onOpen={open} onDelete={remove} />
+        )
       ) : (
         // Same navy as the splash screen, so the handover is invisible rather
         // than a white flash between the two.

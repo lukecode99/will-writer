@@ -22,6 +22,11 @@ const STATUS_OPTIONS: { value: MaritalStatus; label: string }[] = [
 export default function AboutYou({ data, onChange, onNext }: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Filling a will in for someone else is a supported thing to do, but every
+  // "you" on this screen then means a different person from the one holding the
+  // phone, and a form that gets that wrong collects the wrong details.
+  const other = data.isForSomeoneElse;
+
   function validate() {
     const e: Record<string, string> = {};
 
@@ -32,7 +37,7 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
       // reported next to the field that caused it while it is still on screen.
       const bad = unprintableChars(data.fullName);
       if (bad.length > 0) {
-        e.fullName = `We cannot print ${bad.join(' ')}. Please write your name using the Latin alphabet — it has to match the name a court in England and Wales will read.`;
+        e.fullName = `We cannot print ${bad.join(' ')}. Please write the name using the Latin alphabet — it has to match the name a court in England and Wales will read.`;
       }
     }
 
@@ -40,7 +45,7 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
       e.address = 'Address is required';
     } else {
       const bad = unprintableChars(data.address);
-      if (bad.length > 0) e.address = `We cannot print ${bad.join(' ')} in your address.`;
+      if (bad.length > 0) e.address = `We cannot print ${bad.join(' ')} in the address.`;
     }
 
     // The old check was `!dob.trim()`, so "99/99/9999" passed and was echoed
@@ -52,7 +57,9 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
       const dob = parseUkDate(data.dob);
       // Wills Act 1837 s.7 — a will made under 18 is not valid.
       if (dob && ageInYears(dob) < 18) {
-        e.dob = 'You must be 18 or over to make a will in England and Wales.';
+        e.dob = other
+          ? 'A person must be 18 or over to make a will in England and Wales.'
+          : 'You must be 18 or over to make a will in England and Wales.';
       }
     }
 
@@ -63,8 +70,33 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
 
   return (
     <ScrollView contentContainerStyle={shared.scrollContent}>
-      <Text style={shared.heading}>About You</Text>
-      <Text style={shared.sub}>We need a few personal details to create your Will.</Text>
+      <Text style={shared.heading}>{other ? 'About the person making this will' : 'About You'}</Text>
+      <Text style={shared.sub}>
+        {other
+          ? 'These are their details, not yours. The will is written in their voice, and they are the one who signs it.'
+          : 'We need a few personal details to create your Will.'}
+      </Text>
+
+      {other ? (
+        // Saying this once, up front, is the whole reason the app asks who the
+        // will is for. A will written out by someone who stands to gain under
+        // it is the classic shape of a challenge — the executors then have to
+        // prove the testator knew and approved of what they signed. Better the
+        // person typing hears it now than the family hears it in court.
+        <View style={styles.notice}>
+          <Text style={styles.noticeTitle}>Before you fill this in for someone else</Text>
+          <Text style={styles.noticeText}>
+            They must read the finished will, understand it, and sign it themselves in front of
+            two witnesses. Nobody can sign it for them.{'\n\n'}
+            They must be able to understand what they own and who has a claim on them. If they
+            are seriously ill or confused, get a solicitor — capacity is the thing most often
+            argued about afterwards.{'\n\n'}
+            If you or your family stand to inherit under this will, be careful. That is exactly
+            the situation courts look at hardest, and a solicitor's involvement is what usually
+            settles it.
+          </Text>
+        </View>
+      ) : null}
 
       <Text style={shared.label}>Full legal name *</Text>
       <TextInput
@@ -121,6 +153,25 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
 }
 
 const styles = StyleSheet.create({
+  notice: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 8,
+  },
+  noticeTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#7C2D12',
+    marginBottom: 6,
+  },
+  noticeText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#7C2D12',
+  },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

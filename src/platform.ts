@@ -19,6 +19,29 @@ export function notify(message: string, title = 'Will Writer'): void {
   }
 }
 
+/**
+ * Cross-platform "are you sure?" for something that cannot be undone.
+ *
+ * Deleting a will deletes the only copy — nothing is on a server — so it has to
+ * be asked properly rather than with `notify`, which has no answer to give.
+ */
+export function confirmDestructive(
+  message: string,
+  confirmLabel: string,
+  onConfirm: () => void,
+  title = 'Are you sure?',
+): void {
+  if (Platform.OS === 'web') {
+    // eslint-disable-next-line no-alert
+    if (window.confirm(message)) onConfirm();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: confirmLabel, style: 'destructive', onPress: onConfirm },
+  ]);
+}
+
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 /**
