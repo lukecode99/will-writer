@@ -54,11 +54,7 @@ const NOT_SUITABLE: GuideItem[] = [
       'strongest claim: they do not have to show they need the money, only that what you left ' +
       'them was less than reasonable.\n\n' +
       'What defends that kind of will is not its wording. It is evidence, recorded at the time, ' +
-      'of why you did it — a solicitor\'s notes of what you told them, and a signed letter kept ' +
-      'with the will. This app cannot produce any of that. It prints what you type. If the will ' +
-      'is challenged there is nothing behind it to explain your reasons, and the people you were ' +
-      'trying to provide for are the ones left arguing it out in court, paying for it out of the ' +
-      'estate, after you are gone.',
+      'of why you did it — a solicitor would support you with this, where this app cannot.',
   },
   { text: 'You have children from an earlier relationship as well as a current partner, and want to provide for both.' },
   { text: 'You are separated but not divorced. Until the divorce is final your spouse is still your spouse.' },
