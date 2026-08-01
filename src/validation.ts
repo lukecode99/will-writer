@@ -1,4 +1,4 @@
-import { WillData } from './types';
+import { Beneficiary, WillData } from './types';
 import { unprintableChars } from './text';
 import { parseUkDate, ageInYears, hasMinorChildren, todayUtc } from './family';
 import { PARTNER_REF, childRef, knownRefs } from './people';
@@ -319,6 +319,61 @@ export function blockingProblems(data: WillData): WillProblem[] {
 }
 
 /**
+ * What is wrong, if anything, with one beneficiary's "under 18" switch.
+ *
+ * Exported because it is said twice on purpose: once in a box beside the switch
+ * that causes it, and once on Review. The switch is where it can be understood
+ * and Review is the last page before signing, and a single copy in either place
+ * is the version that gets missed.
+ */
+export function minorFlagWarning(data: WillData, b: Beneficiary): string {
+  const who = b.name.trim() || 'This beneficiary';
+
+  if (b.isMinor && b.linkedPersonId === PARTNER_REF) {
+    const spouseLabel =
+      data.maritalStatus === 'married' ? 'husband or wife'
+        : data.maritalStatus === 'civilPartnership' ? 'civil partner'
+          : '';
+    return spouseLabel
+      ? `${who} is marked as under 18, and also as your ${spouseLabel}. Nobody can be married or in a civil partnership under 18 in England and Wales, so one of those two answers is wrong. As the will stands, their share is held by your executors on trust until they turn 18.`
+      : `${who} is marked as under 18, so their share does not pass to them outright — it is held by your executors on trust until they turn 18. Check that is what you meant.`;
+  }
+
+  // Matched by link first and by name second, for the same reason the provision
+  // check does it in that order: wills and fixtures written before the picker
+  // existed carry no link, and they are exactly the ones with a hand-set switch
+  // to get wrong. A name is only trusted when it matches one child, because two
+  // children called the same thing is a question rather than an answer.
+  const byLink = data.children.filter(c => childRef(c.id) === b.linkedPersonId);
+  const name = b.name.trim().toLowerCase();
+  const byName = name ? data.children.filter(c => c.name.trim().toLowerCase() === name) : [];
+  const matched = byLink.length === 1 ? byLink[0] : byName.length === 1 ? byName[0] : null;
+  if (!matched) return '';
+
+  const dob = parseUkDate(matched.dob);
+  if (!dob) return '';
+  const age = ageInYears(dob, todayUtc());
+
+  if (b.isMinor && age >= 18) {
+    return `${who} is marked as under 18, but the date of birth on Partner & Children makes them ${age}. Their share is written as held on trust until they turn 18, which they already have.`;
+  }
+
+  if (!b.isMinor && age < 18) {
+    // The severity genuinely differs. The trust clause is written to catch any
+    // beneficiary who is under 18 at the date of death, so an unflagged child is
+    // still covered by its operative words as long as the clause is in the
+    // document at all — and it is only in the document if somebody is flagged.
+    // Saying "there is no trust" when there is one would be the same class of
+    // error as the switch itself.
+    return data.beneficiaries.some(other => other.isMinor)
+      ? `${who} is ${age} according to Partner & Children, but is not marked as under 18. The trust in your will covers any beneficiary who is under 18 when you die, so their share would still be held — but they are not named in it, and the summary shows their share as an outright gift.`
+      : `${who} is ${age} according to Partner & Children, but is not marked as under 18, and neither is anyone else. Your will therefore contains no trust for a young beneficiary at all, and a person under 18 cannot give your executors a valid receipt for their share.`;
+  }
+
+  return '';
+}
+
+/**
  * Things that are legally valid but are very likely not what the user meant.
  * These never block generation — they are shown on Review and the user decides.
  */
@@ -347,6 +402,39 @@ export function warnings(data: WillData): WillProblem[] {
       step: 'guardians',
       message: 'You named a substitute guardian but no first choice. A substitute only takes over from someone, so as it stands no guardian is appointed.',
     });
+  }
+
+  // The "this beneficiary is under 18" switch, checked against what the rest of
+  // the will already says about the same person.
+  //
+  // Nothing checked it, and it is not a cosmetic switch: turning it on writes a
+  // trust for minor beneficiaries into the document, names that person in it,
+  // and prints their share in the summary as "(held on trust until age 18)".
+  // Ticking it against a spouse produced a will that held the spouse's share on
+  // trust until she came of age, with nothing anywhere saying so.
+  //
+  // Two contradictions are findable without asking for anything new, because
+  // both people are already described elsewhere in the app.
+  //
+  // A partner is one of them. Since 27 February 2023 the minimum age for
+  // marriage and civil partnership in England and Wales has been 18 (Marriage
+  // and Civil Partnership (Minimum Age) Act 2022), so "my husband" and "under
+  // 18" cannot both be true. An unmarried partner under 18 is at least possible,
+  // so that one is reported as a consequence rather than as an error.
+  //
+  // A child is the other, and there the date of birth on the Family step settles
+  // it. Matched by link first and by name second, for the same reason the
+  // provision check does it in that order: fixtures and wills written before the
+  // picker existed carry no link, and they are exactly the ones with a hand-set
+  // switch to get wrong. A name is only trusted when it matches one child, since
+  // two children called the same thing is a question, not an answer.
+  //
+  // Neither is repaired automatically. Which of the two answers is the wrong one
+  // is not knowable from here, and the standing rule for this app is to warn on
+  // a contradiction and never resolve it silently.
+  for (const b of data.beneficiaries) {
+    const message = minorFlagWarning(data, b);
+    if (message) out.push({ step: 'residuary', message });
   }
 
   // A gift to the testator's own child where the chosen substitution displaces

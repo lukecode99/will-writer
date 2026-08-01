@@ -218,7 +218,17 @@ const RAW = {
       '(held on trust until age 18)',
     ],
     mustNotContain: ['DRAFT — DO NOT SIGN'],
-    check: all(noMarkers, advisoryDoesNotMention('have not appointed a guardian')),
+    check: all(
+      noMarkers,
+      advisoryDoesNotMention('have not appointed a guardian'),
+      // This fixture flags Oliver as a minor and leaves Amelia, born 2019,
+      // unflagged. That was there before the switch was checked against
+      // anything and went unremarked; now it is the mixed case, and it is
+      // asserted here so the wording stays the softer of the two — the trust
+      // clause exists and its operative words already cover her.
+      advisoryMentions('Amelia Smith'),
+      advisoryMentions('they are not named in it'),
+    ),
   },
 
   'minors-no-guardians': {
@@ -227,6 +237,66 @@ const RAW = {
     verdict: 'ok',
     mustNotContain: ['APPOINTMENT OF GUARDIANS', 'DRAFT — DO NOT SIGN'],
     check: all(noMarkers, advisoryMentions('have not appointed a guardian')),
+  },
+
+  /*
+   * The "this beneficiary is under 18" switch, checked against the rest of the
+   * will. Four scenarios, because the switch is wrong in more than one way and
+   * the app must not say the same sentence about all of them.
+   *
+   * The spouse case is the one Luke hit while testing: married and under 18
+   * cannot both be true, since the minimum age for marriage and civil
+   * partnership in England and Wales has been 18 since 27 February 2023, so the
+   * app says one of the two answers is wrong. The cohabitant case is the
+   * control — an unmarried partner under 18 is unusual but possible, and calling
+   * that impossible would be a new bug rather than a fix, so the expectation
+   * asserts the impossibility wording is absent there.
+   */
+  'spouse-marked-minor': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      advisoryMentions('married or in a civil partnership under 18'),
+      advisoryMentions('Jane Elizabeth Smith'),
+    ),
+  },
+
+  'cohabitant-marked-minor': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      advisoryMentions('held by your executors on trust until they turn 18'),
+      advisoryDoesNotMention('married or in a civil partnership under 18'),
+    ),
+  },
+
+  // Born 2004 on the Family step, switched on as a minor on the residuary step.
+  // The date of birth already answers it, so the advisory reports it back
+  // rather than asking the question again.
+  'adult-child-marked-minor': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      advisoryMentions('which they already have'),
+      advisoryDoesNotMention('married or in a civil partnership under 18'),
+    ),
+  },
+
+  // The other direction, and the one with teeth: young children, neither switch
+  // set, so the document carries no trust for a minor beneficiary at all. The
+  // absent clause is asserted directly as well as through the advisory, because
+  // the advisory's wording is only correct if the clause really is missing.
+  'young-children-none-flagged': {
+    verdict: 'ok',
+    mustNotContain: ['TRUSTS FOR MINOR BENEFICIARIES', 'DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      advisoryMentions('no trust for a young beneficiary at all'),
+      advisoryMentions('cannot give your executors a valid receipt'),
+    ),
   },
 
   'guardians-with-substitute': {

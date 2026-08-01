@@ -130,6 +130,58 @@ const minorsWithGuardians = {
 // ----------------------------------------- minor children, guardians EMPTY
 const minorsNoGuardians = { ...clone(minorsWithGuardians), guardians: [] };
 
+// -------------------------------------------- the "under 18" switch, misused
+//
+// The switch is free-standing on the residuary step and nothing used to check
+// it against anything, so it could be set on a spouse. That is not cosmetic: it
+// writes a trust into the will and holds the share until the beneficiary turns
+// 18. Reported from a live test of the app, not invented here.
+const spouseMarkedMinor = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50', { isMinor: true, linkedPersonId: 'p:partner' }),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// The same switch on an unmarried partner. Unusual, but not impossible the way
+// a married 17-year-old is, so the app has to describe the consequence rather
+// than call it an error.
+const cohabitantMarkedMinor = {
+  ...clone(spouseMarkedMinor),
+  maritalStatus: 'single',
+  partnerName: 'Samantha Leaver',
+  beneficiaries: [
+    ben('b1', 'Samantha Leaver', 'partner', '50', { isMinor: true, linkedPersonId: 'p:partner' }),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// Switch on, but the Family step says this child was born in 2004. Matched by
+// name rather than by link, because that is what a will written before the
+// person-picker existed looks like.
+const adultChildMarkedMinor = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true, isMinor: true }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// The other direction, and the one with teeth: two young children, neither
+// switch set, so the will carries no trust for a minor beneficiary at all.
+const youngChildrenNoneFlagged = {
+  ...clone(minorsWithGuardians),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
 // ------------------------------- a couple as first choice, plus a substitute
 // The case the old numbered list got wrong. Two primaries are appointed
 // jointly; the substitute waits for BOTH to fail, not either, so that if one
@@ -778,6 +830,10 @@ module.exports = {
   'single-beneficiary-100': single100,
   'minors-with-guardians': minorsWithGuardians,
   'minors-no-guardians': minorsNoGuardians,
+  'spouse-marked-minor': spouseMarkedMinor,
+  'cohabitant-marked-minor': cohabitantMarkedMinor,
+  'adult-child-marked-minor': adultChildMarkedMinor,
+  'young-children-none-flagged': youngChildrenNoneFlagged,
   'guardians-with-substitute': guardiansWithSubstitute,
   'guardians-single-plus-substitute': guardiansSinglePlusSubstitute,
   'spouse-omitted': spouseOmitted,

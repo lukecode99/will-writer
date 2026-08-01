@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
 import { WillData, Beneficiary, Substitute, SubstitutionType } from '../types';
-import { blockingProblems, parsePercentage, percentageTotal } from '../validation';
+import { blockingProblems, minorFlagWarning, parsePercentage, percentageTotal } from '../validation';
 import { KnownPerson, defaultSubstitutionType, knownPeople, knownRefs } from '../people';
 import { C, shared } from './shared';
 import { notify } from '../platform';
@@ -387,6 +387,15 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
             />
             <Text style={styles.toggleLabel}>This beneficiary is under 18</Text>
           </View>
+
+          {/* Said beside the switch as well as on Review. The switch is a quiet
+              one — it rewrites the gift as a trust — and this is the only place
+              the person who flipped it is still looking. */}
+          {!!minorFlagWarning(data, b) && (
+            <View style={styles.warningBox}>
+              <Text style={styles.warningText}>⚠️ {minorFlagWarning(data, b)}</Text>
+            </View>
+          )}
 
           {/* Said here as well as on the review screen, because this is the
               switch that causes it and the family list is two steps back. The
