@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
 import { WillData, Beneficiary, SubstitutionType } from '../types';
 import { blockingProblems, parsePercentage, percentageTotal } from '../validation';
-import { KnownPerson, knownPeople, knownRefs } from '../people';
+import { KnownPerson, defaultSubstitutionType, knownPeople, knownRefs } from '../people';
 import { C, shared } from './shared';
 import { notify } from '../platform';
 
@@ -176,7 +176,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           percentage: '',
           isOwnChild: person ? person.isOwnChild : false,
           isMinor: false,
-          substitution: { type: 'per-stirpes', namedPerson: '' },
+          substitution: { type: defaultSubstitutionType(person ? person.isOwnChild : false, data), namedPerson: '' },
         },
       ],
     });

@@ -123,3 +123,36 @@ export function syncLinkedBeneficiaries(data: WillData): WillData {
 
   return changed ? { ...data, beneficiaries } : data;
 }
+
+/**
+ * What a newly-added residuary beneficiary's substitute should start as.
+ *
+ * The default matters more here than defaults usually do, because the
+ * substitution is the part of a will people are least likely to revisit: it
+ * answers a question about a death that has not happened, on a screen already
+ * asking them about percentages. Whatever it starts as is what most wills will
+ * say.
+ *
+ * So it starts as the answer that is right for most wills. "If they go first,
+ * my children take" is the shape of the commonest will in England and Wales,
+ * and it is right for a charity or a friend too — a charity has no children,
+ * and per-stirpes for one is wording that can never operate.
+ *
+ * Two exceptions, both of which would otherwise produce something that cannot
+ * work:
+ *
+ * - No children listed. A gift to an empty class, and blocked in validation.
+ * - The beneficiary is one of my own children, where "my children equally"
+ *   contradicts itself in a single sentence. Per-stirpes there already means my
+ *   grandchildren, which is what s.33 would have done anyway.
+ *
+ * Only ever consulted when a beneficiary is added. A substitution already saved
+ * on a draft is left exactly as it is: a default that reached back into stored
+ * wills would change who inherits under a document its owner had already read.
+ */
+export function defaultSubstitutionType(
+  isOwnChild: boolean,
+  data: WillData,
+): 'per-stirpes' | 'own-children' {
+  return data.children.length > 0 && !isOwnChild ? 'own-children' : 'per-stirpes';
+}
