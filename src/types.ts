@@ -74,7 +74,38 @@ export interface SpecificGift {
   substitutionRecipient: string;
 }
 
-export type SubstitutionType = 'per-stirpes' | 'named' | 'pro-rata';
+/**
+ * Where a residuary share goes if that beneficiary dies before the testator.
+ *
+ * 'per-stirpes'  — to that beneficiary's own children, then down to their issue.
+ * 'named'        — to one named person or charity.
+ * 'pro-rata'     — split among the surviving residuary beneficiaries.
+ * 'own-children' — to the TESTATOR's children, as a class.
+ *
+ * 'own-children' exists because the commonest will in England and Wales could
+ * not be written here. "Everything to my wife, and if she goes first, to the
+ * children equally" had to be built out of 'per-stirpes', which puts *my wife's*
+ * children into the document rather than *my* children. Where the children are
+ * the couple's own that lands on the right people by coincidence. Where either
+ * partner has children from an earlier relationship it gives the whole estate to
+ * the wrong family, and neither the screen nor the will said so — the preview
+ * read "their own children", which is accurate and reads straight past as "ours".
+ *
+ * It is drafted as a class gift — "such of my children as shall survive me" —
+ * and not as a list of names, so a child born after the will is signed is
+ * included without the will having to be rewritten. The names are already in the
+ * document: the declaration as to family recites each child with a date of
+ * birth, which is where a reader checks them. Naming them in the operative words
+ * as well would invite the argument that the class was confined to the children
+ * alive on the day of signing, which is the opposite of the point.
+ *
+ * Offered only where the beneficiary is not one of the testator's own children.
+ * For a gift to your own child, 'per-stirpes' already means your grandchildren;
+ * 'own-children' there would say in one breath that a predeceased child's
+ * children take (per stirpes) and do not take (s.33 disapplied). That
+ * combination is refused rather than drafted around — see `blockingProblems`.
+ */
+export type SubstitutionType = 'per-stirpes' | 'named' | 'pro-rata' | 'own-children';
 
 export interface BeneficiarySubstitution {
   type: SubstitutionType;

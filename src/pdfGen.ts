@@ -231,6 +231,34 @@ function substitutionClause(b: Beneficiary): string {
     );
   }
 
+  /**
+   * To the testator's own children, as a class.
+   *
+   * The class is described, not listed. "Such of my children as shall survive
+   * me" picks up a child born after the will is signed; a list of names freezes
+   * the family as it was on the day of signing, and the person most likely to be
+   * frozen out is a child who did not exist yet. The reader who wants the names
+   * has them in the declaration as to family, with dates of birth, which is the
+   * clause that exists to say who the family is.
+   *
+   * No s.33 wording here, and none is wanted. s.33 is about a gift to a child of
+   * the testator who dies first; this branch is only ever reached for a
+   * beneficiary who is not the testator's child, so the section has nothing to
+   * operate on. The combination is refused in `blockingProblems` rather than
+   * silently drafted around, because the two provisions would contradict each
+   * other in the same sentence.
+   */
+  if (sub.type === 'own-children') {
+    return (
+      `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
+      `in equal shares to such of my children as shall survive me by 30 days; and if any child of ` +
+      `mine shall have predeceased me leaving children living at my death, those grandchildren shall ` +
+      `take equally between them the share their parent would have taken (per stirpes); and if no ` +
+      `child or issue of mine shall so survive me, ${namePoss} share shall be divided among the ` +
+      `other surviving residuary beneficiaries in proportion to their respective shares.`
+    );
+  }
+
   if (sub.type === 'named') {
     const named = field(sub.namedPerson, 'substitute name missing');
     return (

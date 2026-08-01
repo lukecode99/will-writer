@@ -381,6 +381,97 @@ const nonChildProRata = {
   ],
 };
 
+// ----------------------------------------- "everything to my wife, then the kids"
+//
+// The commonest will in England and Wales, and until now the one shape this app
+// could not express. The whole residue to the spouse, with the children taking
+// only if she dies first.
+//
+// The children are deliberately NOT residuary beneficiaries here. That is the
+// point of the scenario: they are provided for entirely through the
+// substitution, which is exactly the arrangement the "left out of this will"
+// warning used to fire on.
+const mirrorWill = {
+  ...clone(baseline),
+  specificGifts: [],
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
+      substitution: { type: 'own-children', namedPerson: '' },
+    }),
+  ],
+};
+
+// A blended family: the same structure, but Jane has a child of her own who is
+// not John's. Nothing in the data says so — that is the difficulty — but it is
+// the family for whom 'per-stirpes' and 'own-children' send the estate to two
+// completely different sets of people. This fixture pins the wording that makes
+// them distinguishable on the page.
+const mirrorWillPerStirpes = {
+  ...clone(baseline),
+  specificGifts: [],
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
+      substitution: { type: 'per-stirpes', namedPerson: '' },
+    }),
+  ],
+};
+
+// "My children equally" with no children: a gift to an empty class. Unreachable
+// from the screen, which hides the option, and reachable by choosing it and then
+// deleting the children — an edit made two screens away whose effect here is
+// invisible.
+const ownChildrenNoChildren = {
+  ...clone(baseline),
+  children: [],
+  specificGifts: [],
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
+      substitution: { type: 'own-children', namedPerson: '' },
+    }),
+  ],
+};
+
+// "My children equally" as the substitute for one of my own children. The clause
+// would say a predeceased child's children take per stirpes while s.33 is
+// disapplied to reach the others — the same grandchildren both taking and not
+// taking. Refused rather than drafted around.
+const ownChildrenOnOwnChild = {
+  ...clone(baseline),
+  specificGifts: [],
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
+    ben('b2', 'Oliver Smith', 'son', '30', {
+      isOwnChild: true,
+      substitution: { type: 'own-children', namedPerson: '' },
+    }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// ------------------------------------------ named substitutes are a provision
+//
+// Neither child takes anything directly. Oliver is the named substitute for the
+// whole residue, Amelia the named substitute for the specific gift. Both are
+// provided for, and the review screen used to report both of them as left out
+// because it only ever looked at who takes first.
+//
+// One fixture, two rules: it fails if either the residuary substitute or the
+// gift substitute stops being counted.
+const namedSubstitutes = {
+  ...clone(baseline),
+  specificGifts: [
+    gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar', {
+      substitutionType: 'named',
+      substitutionRecipient: 'Amelia Smith',
+    }),
+  ],
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
+      substitution: { type: 'named', namedPerson: 'Oliver Smith' },
+    }),
+  ],
+};
+
 // ------------------------------------------- the list of children unconfirmed
 //
 // A draft saved before the confirmation existed, reopened. Everything in it is
@@ -593,4 +684,11 @@ module.exports = {
   'divorced': divorced,
   'free-of-tax-and-charity': freeOfTaxAndCharity,
   'long-text': longText,
+
+  // round 3 — "everything to my partner, then my children"
+  'mirror-will': mirrorWill,
+  'mirror-will-per-stirpes': mirrorWillPerStirpes,
+  'own-children-no-children': ownChildrenNoChildren,
+  'own-children-on-own-child': ownChildrenOnOwnChild,
+  'named-substitutes': namedSubstitutes,
 };

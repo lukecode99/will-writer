@@ -642,6 +642,95 @@ const RAW = {
     check: all(noMarkers, ({ strict }) =>
       strict.pages >= 5 ? [] : [`expected the long-text will to run past 4 pages, got ${strict.pages}`]),
   },
+
+  // ── "Everything to my partner, then my children" ──────────────────────────
+
+  /**
+   * The commonest will in England and Wales.
+   *
+   * Two things are being pinned. The operative words must describe the class —
+   * "such of my children as shall survive me" — and not name anybody, because a
+   * list of names excludes a child born after signing. And the review screen
+   * must not claim the children were left out: they are provided for by the
+   * substitution, which is the whole shape of this will. That warning fired on
+   * every correctly-built mirror will until now, on the same screen that is
+   * supposed to catch a child who really was omitted.
+   */
+  'mirror-will': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays(
+        "Jane Elizabeth Smith's share shall pass in equal shares to such of my children as shall survive me by 30 days",
+        'if no child or issue of mine shall so survive me',
+      ),
+      // The per-stirpes wording gives the estate to Jane's children. If it
+      // appears here the two branches have been confused, which is the failure
+      // this option exists to prevent.
+      documentDoesNotSay("Jane Elizabeth Smith's children then living"),
+      // No section 33 recital: it is about a gift to a child of mine, and Jane
+      // is not one.
+      documentDoesNotSay('section 33 of the Wills Act 1837 shall not apply'),
+      advisoryDoesNotMention('not left anything in this will'),
+    ),
+  },
+
+  /**
+   * The same will with the old approximation, kept as the contrast.
+   *
+   * Nothing in the data says whether Jane's children are also John's — that is
+   * exactly why the wording has to be distinguishable on the page. This fixture
+   * fails if the two substitutions ever start producing the same sentence, and
+   * it asserts that the omitted-children warning *does* still fire here, because
+   * on this drafting the children genuinely take nothing.
+   */
+  'mirror-will-per-stirpes': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays("shall pass in equal shares to Jane Elizabeth Smith's children then living"),
+      documentDoesNotSay('such of my children as shall survive me'),
+      advisoryMentions('not left anything in this will'),
+    ),
+  },
+
+  /**
+   * A gift to an empty class. Unreachable from the screen, which hides the
+   * option when there are no children — and reachable by choosing it and then
+   * deleting them two screens away, where nothing shows the consequence.
+   */
+  'own-children-no-children': {
+    verdict: 'REFUSED',
+    problemsMention: ['no children are listed on Partner & Children'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /**
+   * The one combination that contradicts itself inside a single sentence: a
+   * predeceased child's children taking per stirpes while s.33 is disapplied so
+   * that they do not. Refused rather than drafted around.
+   */
+  'own-children-on-own-child': {
+    verdict: 'REFUSED',
+    problemsMention: ['cannot be used as the substitute'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /**
+   * Being named as the person who takes if someone else dies first is a
+   * provision. Neither child takes anything directly here — Oliver is the
+   * substitute for the residue, Amelia for the specific gift — and the review
+   * screen reported both of them as left out of the will.
+   *
+   * Two rules, one assertion: it fails if either substitute stops counting.
+   */
+  'named-substitutes': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryDoesNotMention('not left anything in this will')),
+  },
 };
 
 // Attach the common invariants to every scenario.

@@ -121,8 +121,10 @@ function proRataResult(
 function whatIfOutcome(b: Beneficiary, allBens: Beneficiary[]): string {
   const sub = b.substitution;
   switch (sub.type) {
+    case 'own-children':
+      return 'Your own children inherit equally, and a deceased child\'s share goes to their children';
     case 'per-stirpes':
-      return `${b.name}'s children inherit equally (per stirpes)`;
+      return `${b.name}'s own children inherit equally (per stirpes)`;
     case 'named':
       return sub.namedPerson
         ? `Passes to ${sub.namedPerson}`

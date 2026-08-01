@@ -67,14 +67,26 @@ function proRataResult(
   }));
 }
 
-function previewText(b: Beneficiary, allBens: Beneficiary[]): string {
+function previewText(b: Beneficiary, data: WillData): string {
+  const allBens = data.beneficiaries;
   const name = b.name || 'this person';
   // Reads as "their 40% share" once a figure is entered, "their share" until then.
   const pct = b.percentage.trim() ? `${b.percentage.trim()}% ` : '';
   const sub = b.substitution;
   switch (sub.type) {
+    case 'own-children':
+      // Says "including any child born after you sign" out loud. It is the one
+      // property of a class gift nobody expects a form to have, and the reason
+      // this option is safe to leave alone once chosen.
+      return data.children.length === 0
+        ? `If ${name} dies before you, their ${pct}share would pass to your children — but none are listed on Partner & Children yet.`
+        : `If ${name} dies before you, their ${pct}share passes equally to your own children (including any child born after you sign this will). If one of your children has already died, their share goes to their own children.`;
     case 'per-stirpes':
-      return `If ${name} dies before you, their ${pct}share passes equally to their own children (per stirpes). If they have no children, the share is divided among the other surviving beneficiaries.`;
+      // Spelled out as "their children, who may not be yours". Left implicit,
+      // "their own children" reads as "our children" to anyone thinking about
+      // the family they have now, and in a blended family that is the whole
+      // estate going to the wrong side of it.
+      return `If ${name} dies before you, their ${pct}share passes equally to ${name}'s own children — who may not be the same people as your children (per stirpes). If they have no children, the share is divided among the other surviving beneficiaries.`;
     case 'named': {
       const target = sub.namedPerson || '(name not yet entered)';
       return `If ${name} dies before you, their ${pct}share passes to ${target}.`;
@@ -90,7 +102,15 @@ function previewText(b: Beneficiary, allBens: Beneficiary[]): string {
   }
 }
 
-const SUB_OPTIONS: Array<{ value: SubstitutionType; label: string; detail: string }> = [
+interface SubOption { value: SubstitutionType; label: string; detail: string }
+
+const OWN_CHILDREN_OPTION: SubOption = {
+  value: 'own-children',
+  label: 'My children equally',
+  detail: 'Passes to your own children in equal shares, and to a deceased child\'s children in their place. This is the usual choice for a partner.',
+};
+
+const BASE_OPTIONS: SubOption[] = [
   {
     value: 'per-stirpes',
     label: 'Their children equally',
@@ -107,6 +127,30 @@ const SUB_OPTIONS: Array<{ value: SubstitutionType; label: string; detail: strin
     detail: 'Their share is divided among the other beneficiaries in proportion to their existing shares.',
   },
 ];
+
+/**
+ * The substitutes that make sense for this particular beneficiary.
+ *
+ * "My children equally" is offered first where it applies, because for a partner
+ * it is the answer nearly everyone wants and the one the app used to make people
+ * approximate with "their children equally". It is withheld in two cases:
+ *
+ * - No children listed, since it would give the share to an empty class.
+ * - The beneficiary is one of your own children, where it contradicts itself —
+ *   see the note on `SubstitutionType`. "Their children equally" already means
+ *   your grandchildren there.
+ *
+ * An option that is withheld but already chosen on a saved draft is added back,
+ * so the screen shows the will as it actually stands rather than silently
+ * appearing to have selected nothing. Validation is what objects to it.
+ */
+function subOptions(b: Beneficiary, data: WillData): SubOption[] {
+  const eligible = data.children.length > 0 && !b.isOwnChild;
+  if (eligible || b.substitution.type === 'own-children') {
+    return [OWN_CHILDREN_OPTION, ...BASE_OPTIONS];
+  }
+  return BASE_OPTIONS;
+}
 
 export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Props) {
   const known = knownPeople(data);
@@ -282,7 +326,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           <Text style={shared.hint}>Choose what happens to their share.</Text>
 
           <View style={styles.radioGroup}>
-            {SUB_OPTIONS.map(opt => {
+            {subOptions(b, data).map(opt => {
               const selected = b.substitution.type === opt.value;
               return (
                 <TouchableOpacity
@@ -331,7 +375,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           )}
 
           <View style={styles.previewBox}>
-            <Text style={styles.previewText}>{previewText(b, data.beneficiaries)}</Text>
+            <Text style={styles.previewText}>{previewText(b, data)}</Text>
           </View>
         </View>
         );

@@ -184,6 +184,31 @@ export function blockingProblems(data: WillData): WillProblem[] {
           message: `You chose a named substitute for ${b.name.trim() || 'a beneficiary'} but did not say who.`,
         });
       }
+
+      // "My children equally" with no children is a gift to an empty class: the
+      // share is left to nobody and drops through to the backstop, or to
+      // intestacy if there isn't one. The option is hidden when there are no
+      // children, so this is only reachable by choosing it and then removing
+      // them — which is exactly the edit whose consequence is invisible from the
+      // residuary screen.
+      if (b.substitution.type === 'own-children' && data.children.length === 0) {
+        problems.push({
+          step: 'residuary',
+          message: `You chose "my children equally" as the substitute for ${b.name.trim() || 'a beneficiary'}, but no children are listed on Partner & Children. Add them, or choose a different substitute.`,
+        });
+      }
+
+      // The one combination that would contradict itself in a single sentence.
+      // For a gift to your own child the clause says a predeceased child's
+      // children take per stirpes, while section 33 has to be disapplied to
+      // reach the other children at all — so the same grandchildren both take
+      // and do not take. Not draftable, so not drafted.
+      if (b.substitution.type === 'own-children' && b.isOwnChild) {
+        problems.push({
+          step: 'residuary',
+          message: `${b.name.trim() || 'This beneficiary'} is your own child, so "my children equally" cannot be used as the substitute — it would say your grandchildren both do and do not inherit. Choose "their children equally" instead, which for your own child already means your grandchildren.`,
+        });
+      }
     });
   }
 
@@ -320,12 +345,34 @@ export function warnings(data: WillData): WillProblem[] {
   // By name second, and it stays: a will typed out before the picker existed has
   // no links, and neither does anyone added through "someone else". Nothing that
   // used to be caught stops being caught.
+  //
+  // Substitutes count. Being named as the person who takes a share if someone
+  // else dies first is a provision, and it is how the commonest will in England
+  // and Wales provides for the children: everything to the spouse, and to the
+  // children only if the spouse goes first. Counting only the primary gift
+  // reported every one of those wills as leaving the children nothing, on the
+  // same review screen that is supposed to catch a child who really was left
+  // out. A warning that fires on the standard case is worse than no warning —
+  // it is the reason the real one gets scrolled past.
   const providedFor = new Set(
     [
       ...data.beneficiaries.map(b => b.name),
+      ...data.beneficiaries.map(b => b.substitution.namedPerson),
       ...data.specificGifts.map(g => g.recipient),
+      ...data.specificGifts.map(g => g.substitutionRecipient),
     ].map(name => name.trim().toLowerCase()).filter(Boolean),
   );
+
+  /**
+   * Whether every child is covered as a class by a "my children equally"
+   * substitution somewhere in the residuary estate.
+   *
+   * This one cannot be answered per child by name, because the clause never
+   * names anybody — it gives to "such of my children as shall survive me",
+   * which by construction includes all of them, including any born after the
+   * will is signed.
+   */
+  const childrenTakeAsClass = data.beneficiaries.some(b => b.substitution.type === 'own-children');
   const linkedRefs = new Set(data.beneficiaries.map(b => b.linkedPersonId).filter(Boolean));
   // A spouse or civil partner left out entirely. This was missing while the
   // equivalent check for children was present, which is the wrong way round:
@@ -347,7 +394,7 @@ export function warnings(data: WillData): WillProblem[] {
     });
   }
 
-  const omitted = data.children
+  const omitted = childrenTakeAsClass ? [] : data.children
     .filter(child => !linkedRefs.has(childRef(child.id)))
     .map(child => child.name.trim())
     .filter(name => name && !providedFor.has(name.toLowerCase()));
