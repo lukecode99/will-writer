@@ -40,6 +40,59 @@ export function parseUkDate(raw: string): Date | null {
   return date;
 }
 
+/**
+ * Puts the slashes in a date as it is typed, so `24071986` becomes
+ * `24/07/1986` without anyone reaching for the punctuation key.
+ *
+ * The parser above is strict — an unseparated `24071986` is not a date and
+ * never was — so the separators had to come from somewhere, and typing them on
+ * a phone keypad means switching layouts twice per date. Two dates in and it is
+ * the most irritating part of the form.
+ *
+ * Two rules, and the interesting one is the second.
+ *
+ * Digits fill day, month and year in turn and roll over when a part is full, so
+ * eight straight digits land correctly. But a slash the user types themselves
+ * also ends the current part, which is what keeps `1/6/2004` working: the day
+ * is one digit because they said it was. Rolling purely on length would read
+ * that as `16/20/04` — a valid-looking date, in a field where wrong-but-plausible
+ * is the only outcome worth fearing.
+ *
+ * Nothing is ever padded and no trailing slash is ever added. Both would fight
+ * the backspace key: a slash re-appearing as fast as it is deleted is a field
+ * you cannot get out of, and it is the one behaviour people notice immediately.
+ * A slash is only ever shown once there is something on the far side of it.
+ *
+ * Editing in the middle of a completed date can send the cursor to the end,
+ * because the value is controlled and reformatting changes the string. Left
+ * alone: eight characters is a field people retype rather than repair, and the
+ * alternative is tracking selection state through every keystroke.
+ */
+export function formatUkDateInput(raw: string): string {
+  const typed = (raw || '').replace(/[^\d/]/g, '');
+  const limits = [2, 2, 4];
+  const parts = ['', '', ''];
+  let at = 0;
+
+  for (const ch of typed) {
+    if (ch === '/') {
+      // Only ends a part that has something in it, so a stray or doubled slash
+      // cannot push the year into the day's place.
+      if (at < 2 && parts[at].length > 0) at++;
+      continue;
+    }
+    if (parts[at].length === limits[at] && at < 2) at++;
+    if (parts[at].length < limits[at]) parts[at] += ch;
+  }
+
+  const out: string[] = [];
+  for (const part of parts) {
+    if (part === '') break;
+    out.push(part);
+  }
+  return out.join('/');
+}
+
 /** Completed years between `dob` and `on`, by calendar date rather than by a 365.25 approximation. */
 export function ageInYears(dob: Date, on: Date = todayUtc()): number {
   let age = on.getUTCFullYear() - dob.getUTCFullYear();

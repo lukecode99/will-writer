@@ -97,7 +97,9 @@ function namedFields(data: WillData): Array<{ step: StepKey; label: string; valu
   data.beneficiaries.forEach(b => {
     fields.push({ step: 'residuary', label: `the beneficiary "${b.name}"`, value: b.name });
     fields.push({ step: 'residuary', label: `the relationship for "${b.name}"`, value: b.relationship });
-    fields.push({ step: 'residuary', label: `the substitute for "${b.name}"`, value: b.substitution.namedPerson });
+    b.substitution.substitutes.forEach(s => {
+      fields.push({ step: 'residuary', label: `the substitute "${s.name}" for "${b.name}"`, value: s.name });
+    });
   });
   return fields;
 }
@@ -201,11 +203,58 @@ export function blockingProblems(data: WillData): WillProblem[] {
     }
 
     data.beneficiaries.forEach(b => {
-      if (b.substitution.type === 'named' && !b.substitution.namedPerson.trim()) {
-        problems.push({
-          step: 'residuary',
-          message: `You chose a named substitute for ${b.name.trim() || 'a beneficiary'} but did not say who.`,
-        });
+      // Named substitutes: who they are, and how much each of them takes.
+      //
+      // All three checks below block rather than warn, and for the same reason
+      // the equivalent checks on the beneficiaries themselves do: each one ends
+      // as a gap marker or a wrong number in the operative words of a signed
+      // document. The shares are the addition to watch — they are a percentage
+      // of this beneficiary's share, so they have to come to 100 among
+      // themselves and not to the beneficiary's own figure. Someone reading
+      // "60%" at the top of the card and typing 30 and 30 underneath it has
+      // written a will that disposes of 36% of their estate on that branch and
+      // is silent about the rest.
+      if (b.substitution.type === 'named') {
+        const who = b.name.trim() || 'a beneficiary';
+        const subs = b.substitution.substitutes;
+
+        if (subs.length === 0) {
+          problems.push({
+            step: 'residuary',
+            message: `You chose named substitutes for ${who} but did not say who.`,
+          });
+        } else {
+          const blank = subs.filter(s => !s.name.trim()).length;
+          if (blank > 0) {
+            problems.push({
+              step: 'residuary',
+              message: blank === 1
+                ? `One of the substitutes for ${who} has no name. Add it, or remove the row.`
+                : `${blank} of the substitutes for ${who} have no name. Add them, or remove the rows.`,
+            });
+          }
+
+          // A single substitute takes the whole share, and the will says so
+          // without apportioning anything, so the box is not shown and there is
+          // nothing here to check.
+          if (subs.length > 1) {
+            const badShare = subs.filter(s => parsePercentage(s.share) === null);
+            if (badShare.length > 0) {
+              problems.push({
+                step: 'residuary',
+                message: `Check the shares for the substitutes for ${who} — each must be a number between 0 and 100.`,
+              });
+            } else {
+              const subTotal = subs.reduce((sum, s) => sum + (parsePercentage(s.share) ?? 0), 0);
+              if (Math.abs(subTotal - 100) > PERCENT_TOLERANCE) {
+                problems.push({
+                  step: 'residuary',
+                  message: `The substitutes for ${who} share out ${Number(subTotal.toFixed(2))}% of ${b.name.trim() ? `${b.name.trim()}'s` : 'their'} share. They must come to 100% of it — these are shares of that share, not of your whole estate.`,
+                });
+              }
+            }
+          }
+        }
       }
 
       // "My children equally" with no children is a gift to an empty class: the
@@ -323,6 +372,43 @@ export function warnings(data: WillData): WillProblem[] {
     });
   }
 
+  // Named substitutes who are, between them, exactly the testator's own
+  // children — the long way round to "my children equally", with one difference
+  // that only shows up years later.
+  //
+  // A list of names is fixed on the day the will is signed. "Such of my children
+  // as shall survive me" is a class, and a class picks up a child born
+  // afterwards without the will being touched. So the two say the same thing
+  // today and different things the moment there is another child, and the one
+  // left out is the one who did not exist yet. Nobody rewrites a will for that,
+  // because nobody knows they have to.
+  //
+  // Advisory, not blocking, and only raised when the named list covers every
+  // child there is. Naming some of your children and not others is a decision;
+  // naming all of them is nearly always someone reaching for the class gift and
+  // not finding it. Not offered where the beneficiary is one of the testator's
+  // own children either, because "my children equally" is refused there anyway
+  // (it would say the grandchildren both do and do not take) and pointing at an
+  // option that cannot be chosen is worse than saying nothing.
+  const childNames = new Set(
+    data.children.map(c => c.name.trim().toLowerCase()).filter(Boolean),
+  );
+  if (childNames.size > 1) {
+    const classGiftLong = data.beneficiaries.filter(b => {
+      if (b.substitution.type !== 'named' || b.isOwnChild) return false;
+      const named = b.substitution.substitutes.map(s => s.name.trim().toLowerCase()).filter(Boolean);
+      if (named.length !== childNames.size) return false;
+      return named.every(n => childNames.has(n)) && new Set(named).size === named.length;
+    }).map(b => b.name.trim()).filter(Boolean);
+
+    if (classGiftLong.length > 0) {
+      out.push({
+        step: 'residuary',
+        message: `The substitutes you named for ${classGiftLong.join(' and ')} are exactly your children, listed one by one. "My children equally" says the same thing today but also covers a child born after you sign this will — a named list does not, and the child who would be left out is the one who does not exist yet. If your children are the point rather than those particular names, switch to it.`,
+      });
+    }
+  }
+
   if (!data.secondaryExecutor.name.trim() && !data.backupExecutor.name.trim()) {
     out.push({
       step: 'executors',
@@ -416,7 +502,7 @@ export function warnings(data: WillData): WillProblem[] {
   const providedFor = new Set(
     [
       ...data.beneficiaries.map(b => b.name),
-      ...data.beneficiaries.map(b => b.substitution.namedPerson),
+      ...data.beneficiaries.flatMap(b => b.substitution.substitutes.map(s => s.name)),
       ...data.specificGifts.map(g => g.recipient),
       ...data.specificGifts.map(g => g.substitutionRecipient),
     ].map(name => name.trim().toLowerCase()).filter(Boolean),

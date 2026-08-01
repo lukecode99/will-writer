@@ -78,7 +78,7 @@ export interface SpecificGift {
  * Where a residuary share goes if that beneficiary dies before the testator.
  *
  * 'per-stirpes'  — to that beneficiary's own children, then down to their issue.
- * 'named'        — to one named person or charity.
+ * 'named'        — to people or charities you name, in shares you set.
  * 'pro-rata'     — split among the surviving residuary beneficiaries.
  * 'own-children' — to the TESTATOR's children, as a class.
  *
@@ -107,9 +107,48 @@ export interface SpecificGift {
  */
 export type SubstitutionType = 'per-stirpes' | 'named' | 'pro-rata' | 'own-children';
 
+/**
+ * One person who takes a slice of a beneficiary's share if that beneficiary
+ * dies first.
+ *
+ * `share` is a percentage OF THAT BENEFICIARY'S SHARE, not of the estate. Two
+ * substitutes on 50% each behind a partner left 60% take 30% of the estate
+ * apiece. This is the single most misreadable number in the app, so the screen
+ * reads the estate figure back in words next to the box, and the will itself
+ * says "as to 50% thereof" — "thereof" being the word that ties it to the share
+ * rather than to the whole.
+ */
+export interface Substitute {
+  id: string;
+  name: string;
+  share: string;
+}
+
+/**
+ * Where a beneficiary's share goes if they die first.
+ *
+ * `substitutes` is a list rather than one name because the commonest thing
+ * anyone wants to say — "everything to my partner, and if she goes first, split
+ * between the children" — could not be said unless those children happened to
+ * be hers. 'own-children' covers the case where they are all mine; a list of
+ * named people covers everyone else: stepchildren, a partner's children, a
+ * sibling and a charity, any mix.
+ *
+ * Only meaningful when `type` is 'named'. It is left populated when the type is
+ * switched away and back, because a substitution is a decision someone made and
+ * flipping through the other options to read what they do should not silently
+ * destroy it.
+ *
+ * The previous shape was a single `namedPerson: string`, which is why the list
+ * is normalised on load rather than assumed — see `normalizeSubstitution`. That
+ * field admitted "Jacob and Keira in equal shares" as free text: it dropped
+ * straight into the operative words as a sentence, read perfectly well, and
+ * nothing checked that the shares summed or said what happened if one of the
+ * two died first. Structured, all three are answerable.
+ */
 export interface BeneficiarySubstitution {
   type: SubstitutionType;
-  namedPerson: string;
+  substitutes: Substitute[];
 }
 
 export interface Beneficiary {

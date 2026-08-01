@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { WillData, MaritalStatus } from '../types';
-import { dobError, parseUkDate, ageInYears } from '../family';
+import { dobError, parseUkDate, ageInYears, formatUkDateInput } from '../family';
 import { unprintableChars } from '../text';
 import { C, shared } from './shared';
 
@@ -124,7 +124,7 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
         style={[shared.input, errors.dob ? shared.inputError : null]}
         placeholder="DD/MM/YYYY"
         value={data.dob}
-        onChangeText={v => onChange({ dob: v })}
+        onChangeText={v => onChange({ dob: formatUkDateInput(v) })}
         keyboardType="numbers-and-punctuation"
       />
       {errors.dob ? <Text style={shared.error}>{errors.dob}</Text> : null}

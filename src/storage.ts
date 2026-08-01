@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { WillData, EMPTY_WILL, Beneficiary, Guardian, SpecificGift, SubstitutionType } from './types';
+import {
+  WillData, EMPTY_WILL, Beneficiary, BeneficiarySubstitution, Guardian, SpecificGift,
+  Substitute, SubstitutionType,
+} from './types';
 
 const DOCS_KEY = 'willWriter.docs.v1';
 const CORRUPT_KEY = 'willWriter.docs.v1.corrupt';
@@ -76,11 +79,50 @@ const SUBSTITUTION_TYPES: SubstitutionType[] = ['per-stirpes', 'named', 'pro-rat
  * but a visible one: it shows on the residuary screen and in the preview, where
  * it can be seen and put back.
  */
-function normalizeSubstitution(sub: any): { type: SubstitutionType; namedPerson: string } {
+function normalizeSubstitution(sub: any): BeneficiarySubstitution {
   const type: SubstitutionType = SUBSTITUTION_TYPES.includes(sub?.type) ? sub.type : 'per-stirpes';
-  // Typed rather than trusted: this is concatenated straight into a sentence of
-  // the will, so a number here becomes a number in the document.
-  return { type, namedPerson: typeof sub?.namedPerson === 'string' ? sub.namedPerson : '' };
+
+  // A list of substitutes, from a build that has one.
+  //
+  // Typed rather than trusted at every field: these are concatenated straight
+  // into a sentence of the will, so a number where a name should be becomes a
+  // number in the document, and a share that is not a string reaches a parser
+  // that expects one.
+  if (Array.isArray(sub?.substitutes)) {
+    const substitutes: Substitute[] = sub.substitutes
+      .filter((s: any) => s && typeof s === 'object')
+      .map((s: any) => ({
+        id: typeof s.id === 'string' && s.id ? s.id : Math.random().toString(36).slice(2),
+        name: typeof s.name === 'string' ? s.name : '',
+        share: typeof s.share === 'string' ? s.share : '',
+      }));
+    return { type, substitutes };
+  }
+
+  // A draft saved before substitutes could be a list, when the field was one
+  // free-text `namedPerson`.
+  //
+  // It migrates to a single entry taking the whole of that beneficiary's share,
+  // which is what the old document said: "shall pass to X absolutely", no
+  // apportionment because there was nothing to apportion between. The clause
+  // generator emits exactly that wording for a one-entry list, so an old draft
+  // reopened here and regenerated produces the same words it did before.
+  //
+  // Deliberately not parsed. Someone who typed "Jacob and Keira in equal
+  // shares" into that box has two substitutes in mind, and splitting the string
+  // would look like the app understanding that — but "Jacob and Keira" is also
+  // how a charity or a couple taking jointly gets typed, and guessing wrong
+  // rewrites who inherits. It comes back as one entry reading exactly what they
+  // wrote, on a screen that now shows it in a list with a share box beside it,
+  // where the ambiguity is visible and theirs to resolve.
+  if (typeof sub?.namedPerson === 'string' && sub.namedPerson.trim()) {
+    return {
+      type,
+      substitutes: [{ id: Math.random().toString(36).slice(2), name: sub.namedPerson, share: '100' }],
+    };
+  }
+
+  return { type, substitutes: [] };
 }
 
 function normalizeBeneficiary(b: any): Beneficiary {

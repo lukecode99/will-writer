@@ -1,6 +1,13 @@
 /** Adversarial probe: build wills that SHOULD be flagged and see what the app says. */
 import { createRequire } from 'node:module';
-const ROOT = '/workspace/agent/projects/will-writer';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Resolved from this file, rather than the absolute path it used to carry. That
+// path pointed at a second checkout of the same app, so the probe went on
+// reporting cleanly about source nobody was editing — the failure mode being
+// that it agrees with you.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(ROOT + '/package.json');
 require('sucrase/register/ts');
 const { blockingProblems, warnings } = require(ROOT + '/src/validation.ts');
@@ -17,7 +24,7 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const ben = (id, name, rel, pct, o = {}) => ({
   id, name, relationship: rel, percentage: pct,
   isOwnChild: o.isOwnChild || false, isMinor: o.isMinor || false,
-  substitution: o.substitution || { type: 'per-stirpes', namedPerson: '' },
+  substitution: o.substitution || { type: 'per-stirpes', substitutes: [] },
   linkedPersonId: o.linkedPersonId || '',
 });
 
@@ -55,7 +62,7 @@ handTypedChild.beneficiaries = [
   // Same human being as child c1. Added via "+ Add someone else", so unlinked
   // and isOwnChild defaults to false. Named substitution displaces s.33 anyway.
   ben('b2', 'Oliver Smith', 'son', '50', {
-    substitution: { type: 'named', namedPerson: 'Michael Doyle' },
+    substitution: { type: 'named', substitutes: [{ id: 'sub-md', name: 'Michael Doyle', share: '100' }] },
   }),
 ];
 report('1. own child added by hand, isOwnChild off, NAMED substitute', handTypedChild,
@@ -74,7 +81,7 @@ report('2. unmarried live-in partner, left nothing', cohabitee,
 const selfSub = clone(base);
 selfSub.beneficiaries = [
   ben('b1', 'Jane Elizabeth Smith', 'wife', '50', {
-    substitution: { type: 'named', namedPerson: 'Jane Elizabeth Smith' },
+    substitution: { type: 'named', substitutes: [{ id: 'sub-jes', name: 'Jane Elizabeth Smith', share: '100' }] },
   }),
   ben('b2', 'Oliver Smith', 'son', '50', { isOwnChild: true, linkedPersonId: 'c:c1' }),
 ];

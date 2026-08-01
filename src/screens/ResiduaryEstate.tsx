@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
-import { WillData, Beneficiary, SubstitutionType } from '../types';
+import { WillData, Beneficiary, Substitute, SubstitutionType } from '../types';
 import { blockingProblems, parsePercentage, percentageTotal } from '../validation';
 import { KnownPerson, defaultSubstitutionType, knownPeople, knownRefs } from '../people';
 import { C, shared } from './shared';
@@ -88,8 +88,24 @@ function previewText(b: Beneficiary, data: WillData): string {
       // estate going to the wrong side of it.
       return `If ${name} dies before you, their ${pct}share passes equally to ${name}'s own children — who may not be the same people as your children (per stirpes). If they have no children, the share is divided among the other surviving beneficiaries.`;
     case 'named': {
-      const target = sub.namedPerson || '(name not yet entered)';
-      return `If ${name} dies before you, their ${pct}share passes to ${target}.`;
+      const subs = sub.substitutes;
+      if (subs.length === 0) return `If ${name} dies before you, their ${pct}share passes to people you name — none added yet.`;
+      if (subs.length === 1) {
+        return `If ${name} dies before you, their ${pct}share passes to ${subs[0].name.trim() || '(name not yet entered)'}.`;
+      }
+      // Read back as a share of the estate as well as of the share, because
+      // that conversion is where the misunderstanding lives — "50%" typed under
+      // a beneficiary on 60% is 30% of the estate, and nobody does that
+      // arithmetic in their head while filling in a form.
+      const ofEstate = parsePercentage(b.percentage);
+      const parts = subs.map(s => {
+        const who = s.name.trim() || '(name not yet entered)';
+        const share = parsePercentage(s.share);
+        if (share === null) return `${who} (share not set)`;
+        const estatePart = ofEstate === null ? '' : ` = ${Number(((share / 100) * ofEstate).toFixed(2))}% of your estate`;
+        return `${who} ${share}%${estatePart}`;
+      });
+      return `If ${name} dies before you, their ${pct}share is divided between: ${parts.join('; ')}. If one of them dies before you too, their part goes to the others.`;
     }
     case 'pro-rata': {
       const others = proRataResult(allBens, b.id);
@@ -118,8 +134,8 @@ const BASE_OPTIONS: SubOption[] = [
   },
   {
     value: 'named',
-    label: 'A named person or charity',
-    detail: 'Their share goes to a specific person or charity you name.',
+    label: 'People or charities I name',
+    detail: 'Their share goes to one or more people you choose, in shares you set. They do not have to be related to this beneficiary.',
   },
   {
     value: 'pro-rata',
@@ -176,7 +192,10 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           percentage: '',
           isOwnChild: person ? person.isOwnChild : false,
           isMinor: false,
-          substitution: { type: defaultSubstitutionType(person ? person.isOwnChild : false, data), namedPerson: '' },
+          substitution: {
+            type: defaultSubstitutionType(person ? person.isOwnChild : false, data),
+            substitutes: [],
+          },
         },
       ],
     });
@@ -190,6 +209,53 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
 
   function removeBen(id: string) {
     onChange({ beneficiaries: data.beneficiaries.filter(b => b.id !== id) });
+  }
+
+  function setSubstitutes(b: Beneficiary, substitutes: Substitute[]) {
+    updateBen(b.id, { substitution: { ...b.substitution, substitutes } });
+  }
+
+  /**
+   * Shares reset to an equal split whenever a substitute is added or removed.
+   *
+   * The alternative — leave the existing figures alone and let the new row
+   * default to whatever is left — puts the user in an invalid state by their own
+   * action every single time, because "whatever is left" of a complete split is
+   * nothing. They would add a second substitute and be told immediately that
+   * their will does not add up.
+   *
+   * An equal split is both always valid and what nearly everyone means by "and
+   * then to the children". Anyone who wants 70/30 types over it, and the reset
+   * only fires on add and remove, so a hand-set split survives everything except
+   * changing the number of people it was a split between — at which point it had
+   * to be revisited anyway.
+   *
+   * The remainder lands on the last entry rather than being spread, so three
+   * people come to exactly 100 (33.33 / 33.33 / 33.34) instead of 99.99. The
+   * tolerance would have accepted 99.99; the document would have said it.
+   */
+  function evenShares(substitutes: Substitute[]): Substitute[] {
+    if (substitutes.length <= 1) {
+      return substitutes.map(s => ({ ...s, share: '100' }));
+    }
+    const each = Math.floor((100 / substitutes.length) * 100) / 100;
+    const last = Number((100 - each * (substitutes.length - 1)).toFixed(2));
+    return substitutes.map((s, i) => ({
+      ...s,
+      share: String(i === substitutes.length - 1 ? last : each),
+    }));
+  }
+
+  function addSub(b: Beneficiary, name: string) {
+    setSubstitutes(b, evenShares([...b.substitution.substitutes, { id: uid(), name, share: '' }]));
+  }
+
+  function updateSub(b: Beneficiary, subId: string, updates: Partial<Substitute>) {
+    setSubstitutes(b, b.substitution.substitutes.map(s => s.id === subId ? { ...s, ...updates } : s));
+  }
+
+  function removeSub(b: Beneficiary, subId: string) {
+    setSubstitutes(b, evenShares(b.substitution.substitutes.filter(s => s.id !== subId)));
   }
 
   const total = percentageTotal(data);
@@ -364,23 +430,93 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
             })}
           </View>
 
-          {b.substitution.type === 'named' && (
-            <>
-              <Text style={shared.label}>Name of substitute recipient</Text>
-              <TextInput
-                style={[shared.input, !b.substitution.namedPerson.trim() ? styles.inputError : null]}
-                placeholder="Full name or charity name"
-                value={b.substitution.namedPerson}
-                onChangeText={v => updateBen(b.id, { substitution: { ...b.substitution, namedPerson: v } })}
-                autoCapitalize="words"
-              />
-              {!b.substitution.namedPerson.trim() ? (
-                <Text style={styles.errorText}>
-                  You have chosen a named substitute but not said who. Enter a name, or pick a different option above.
+          {b.substitution.type === 'named' && (() => {
+            const subs = b.substitution.substitutes;
+            const multiple = subs.length > 1;
+            const subTotal = subs.reduce((s, x) => s + (parsePercentage(x.share) ?? 0), 0);
+            const subTotalOk = Math.abs(subTotal - 100) < 0.01;
+            const benPct = parsePercentage(b.percentage);
+            return (
+              <>
+                <Text style={shared.label}>
+                  {multiple ? 'Who receives their share' : 'Name of substitute recipient'}
                 </Text>
-              ) : null}
-            </>
-          )}
+                <Text style={shared.hint}>
+                  {multiple
+                    ? `Shares here are shares of ${b.name.trim() || 'this beneficiary'}'s ${benPct === null ? '' : `${benPct}% `}share, and must total 100% of it.`
+                    : 'Add more than one person if you want their share split.'}
+                </Text>
+
+                {subs.map((s, si) => (
+                  <View key={s.id} style={styles.subRow}>
+                    <View style={{ flex: 1 }}>
+                      <TextInput
+                        style={[shared.input, !s.name.trim() ? styles.inputError : null]}
+                        placeholder="Full name or charity name"
+                        value={s.name}
+                        onChangeText={v => updateSub(b, s.id, { name: v })}
+                        autoCapitalize="words"
+                      />
+                    </View>
+                    {multiple ? (
+                      <View style={styles.subShare}>
+                        <TextInput
+                          style={[shared.input, pctError(s.share) ? styles.inputError : null]}
+                          placeholder="%"
+                          value={s.share}
+                          onChangeText={v => updateSub(b, s.id, { share: sanitisePct(v) })}
+                          keyboardType="decimal-pad"
+                          inputMode="decimal"
+                          maxLength={6}
+                        />
+                      </View>
+                    ) : null}
+                    <TouchableOpacity style={styles.subRemove} onPress={() => removeSub(b, s.id)}>
+                      <Text style={shared.dangerBtnText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                {subs.some(s => !s.name.trim()) ? (
+                  <Text style={styles.errorText}>
+                    A share left to nobody in particular cannot be paid out. Name each substitute, or remove the row.
+                  </Text>
+                ) : null}
+                {subs.length === 0 ? (
+                  <Text style={styles.errorText}>
+                    You have chosen named substitutes but not said who. Add someone, or pick a different option above.
+                  </Text>
+                ) : null}
+
+                {/* Anyone already known to the will can be added with one tap.
+                    Typed by hand is still allowed and always will be — the
+                    whole point of this option is the people the app does not
+                    know about: a stepchild, a partner's children, a friend. */}
+                <View style={styles.chipRow}>
+                  {known
+                    .filter(p => !subs.some(s => s.name.trim().toLowerCase() === p.name.trim().toLowerCase()))
+                    .map(p => (
+                      <TouchableOpacity key={p.ref} style={styles.chip} onPress={() => addSub(b, p.name)}>
+                        <Text style={styles.chipText}>+ {p.name}</Text>
+                        <Text style={styles.chipRel}>{p.relationship}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  <TouchableOpacity style={styles.chip} onPress={() => addSub(b, '')}>
+                    <Text style={styles.chipText}>+ Someone else</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {multiple ? (
+                  <View style={[styles.totalBar, { backgroundColor: subTotalOk ? '#D1FAE5' : '#FEF3C7', marginTop: 8 }]}>
+                    <Text style={[styles.totalText, { color: subTotalOk ? '#065F46' : '#92400E' }]}>
+                      {subTotal.toFixed(1)}% of {b.name.trim() || 'their'} share
+                      {subTotalOk ? ' ✓' : ` — need ${(100 - subTotal).toFixed(1)}% more`}
+                    </Text>
+                  </View>
+                ) : null}
+              </>
+            );
+          })()}
 
           {b.isOwnChild && b.substitution.type !== 'per-stirpes' && (
             <View style={styles.warningBox}>
@@ -514,6 +650,18 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: C.danger,
+  },
+  subRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  subShare: {
+    width: 78,
+  },
+  subRemove: {
+    paddingHorizontal: 8,
+    paddingVertical: 10,
   },
   errorText: {
     color: C.danger,

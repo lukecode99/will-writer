@@ -24,7 +24,7 @@ require('sucrase/register/ts');
 const { PARTNER_REF, childRef, defaultSubstitutionType, knownPeople, knownRefs, syncLinkedBeneficiaries } =
   require(join(ROOT, 'src/people.ts'));
 const { warnings, blockingProblems } = require(join(ROOT, 'src/validation.ts'));
-const { childrenSummary } = require(join(ROOT, 'src/family.ts'));
+const { childrenSummary, formatUkDateInput, parseUkDate } = require(join(ROOT, 'src/family.ts'));
 const { EMPTY_WILL } = require(join(ROOT, 'src/types.ts'));
 
 let failures = 0;
@@ -50,7 +50,7 @@ function ben(id, name, percentage, opts = {}) {
     percentage,
     isOwnChild: opts.isOwnChild || false,
     isMinor: false,
-    substitution: { type: 'per-stirpes', namedPerson: '' },
+    substitution: { type: 'per-stirpes', substitutes: [] },
     linkedPersonId: opts.linkedPersonId || '',
   };
 }
@@ -357,6 +357,50 @@ const messages = data => warnings(data).map(w => w.message).join(' | ');
   childless.children = [];
   check('with no children listed, nothing defaults to a gift to an empty class',
     defaultSubstitutionType(false, childless) === 'per-stirpes');
+}
+
+/**
+ * Slashes put into a date as it is typed.
+ *
+ * The date parser is strict, so this function is the only thing standing
+ * between what someone taps and a date the app can read. Two of these checks
+ * are about it not being helpful in the wrong direction: `1/6/2004` must keep
+ * the separators the user chose rather than being re-grouped into `16/20/04`,
+ * and deleting a slash must delete it — a separator that grows back as fast as
+ * backspace removes it is a field with no way out, and it is the failure people
+ * hit within seconds.
+ */
+{
+  const same = (input, expected) =>
+    check(`"${input}" formats to "${expected}"`, formatUkDateInput(input) === expected,
+      `got "${formatUkDateInput(input)}"`);
+
+  same('24071986', '24/07/1986');
+  same('1/6/2004', '1/6/2004');
+  same('09/03/1986', '09/03/1986');
+
+  // Typing forwards, one character at a time. No state is carried between
+  // keystrokes, so each of these is the whole field after that keystroke.
+  same('2', '2');
+  same('24', '24');
+  same('240', '24/0');
+  same('24/07', '24/07');
+  same('24/071', '24/07/1');
+
+  // And backwards. Every step must be reachable by pressing backspace on the
+  // step below it, which is exactly what these strings are.
+  same('24/07/198', '24/07/198');
+  same('24/07/', '24/07');
+  same('24/0', '24/0');
+  same('24/', '24');
+
+  same('24-07-1986', '24/07/1986', 'a pasted date with other separators');
+  same('24/07/1986999', '24/07/1986');
+  same('', '');
+  same('1//6', '1/6');
+
+  check('a formatted run of digits parses as the date that was typed',
+    parseUkDate(formatUkDateInput('24071986')).getTime() === Date.UTC(1986, 6, 24));
 }
 
 console.log(`\n${ran} checks, ${ran - failures} passed, ${failures} failed.`);

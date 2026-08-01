@@ -34,7 +34,7 @@ function ben(id, name, relationship, percentage, opts = {}) {
     percentage,
     isOwnChild: opts.isOwnChild || false,
     isMinor: opts.isMinor || false,
-    substitution: opts.substitution || { type: 'per-stirpes', namedPerson: '' },
+    substitution: opts.substitution || { type: 'per-stirpes', substitutes: [] },
     // '' means the name was typed by hand, which is what every fixture written
     // before the picker existed was doing. Those keep being matched by name.
     linkedPersonId: opts.linkedPersonId || '',
@@ -340,7 +340,7 @@ const ownChildNamedSubstitute = {
     ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
     ben('b2', 'Oliver Smith', 'son', '30', {
       isOwnChild: true,
-      substitution: { type: 'named', namedPerson: 'Michael Doyle' },
+      substitution: { type: 'named', substitutes: [{ id: 'sub-md', name: 'Michael Doyle', share: '100' }] },
     }),
     ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
   ],
@@ -357,7 +357,7 @@ const ownChildProRata = {
     ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
     ben('b2', 'Oliver Smith', 'son', '30', {
       isOwnChild: true,
-      substitution: { type: 'pro-rata', namedPerson: '' },
+      substitution: { type: 'pro-rata', substitutes: [] },
     }),
     ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
   ],
@@ -374,7 +374,7 @@ const nonChildProRata = {
   ...clone(baseline),
   beneficiaries: [
     ben('b1', 'Jane Elizabeth Smith', 'wife', '50', {
-      substitution: { type: 'pro-rata', namedPerson: '' },
+      substitution: { type: 'pro-rata', substitutes: [] },
     }),
     ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true }),
     ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
@@ -396,7 +396,7 @@ const mirrorWill = {
   specificGifts: [],
   beneficiaries: [
     ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
-      substitution: { type: 'own-children', namedPerson: '' },
+      substitution: { type: 'own-children', substitutes: [] },
     }),
   ],
 };
@@ -411,7 +411,7 @@ const mirrorWillPerStirpes = {
   specificGifts: [],
   beneficiaries: [
     ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
-      substitution: { type: 'per-stirpes', namedPerson: '' },
+      substitution: { type: 'per-stirpes', substitutes: [] },
     }),
   ],
 };
@@ -426,7 +426,7 @@ const ownChildrenNoChildren = {
   specificGifts: [],
   beneficiaries: [
     ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
-      substitution: { type: 'own-children', namedPerson: '' },
+      substitution: { type: 'own-children', substitutes: [] },
     }),
   ],
 };
@@ -442,7 +442,7 @@ const ownChildrenOnOwnChild = {
     ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
     ben('b2', 'Oliver Smith', 'son', '30', {
       isOwnChild: true,
-      substitution: { type: 'own-children', namedPerson: '' },
+      substitution: { type: 'own-children', substitutes: [] },
     }),
     ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
   ],
@@ -507,7 +507,93 @@ const namedSubstitutes = {
   ],
   beneficiaries: [
     ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
-      substitution: { type: 'named', namedPerson: 'Oliver Smith' },
+      substitution: { type: 'named', substitutes: [{ id: 'sub-os', name: 'Oliver Smith', share: '100' }] },
+    }),
+  ],
+};
+
+// ------------------------------------ everything to my partner, then a list
+//
+// The provision the app could not previously express: one primary beneficiary,
+// and behind her a set of people who are not her relatives and are not, between
+// them, exactly the testator's children either. Two of the three are his own
+// children and the third is nobody's — which is the case both existing options
+// get wrong. 'per-stirpes' would send the whole share down the wife's line;
+// 'own-children' would drop Daniel Doyle entirely.
+//
+// The odd number of substitutes is the point of the shares: 50/30/20 cannot be
+// arrived at by any equal split, so the document has to be apportioning what it
+// was given rather than dividing by three.
+const substitutesPerPrimary = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
+      substitution: {
+        type: 'named',
+        substitutes: [
+          { id: 's1', name: 'Oliver Smith', share: '50' },
+          { id: 's2', name: 'Amelia Smith', share: '30' },
+          { id: 's3', name: 'Daniel Doyle', share: '20' },
+        ],
+      },
+    }),
+  ],
+};
+
+// Substitute shares that do not come to 100% OF THAT SHARE.
+//
+// 50 and 30 against a beneficiary left the whole estate. It is the arithmetic
+// nobody does in their head, and the will it produces is silent about the
+// remaining fifth of the estate on that branch while reading as complete
+// everywhere else — so it has to block, not warn.
+const substitutesShareShort = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
+      substitution: {
+        type: 'named',
+        substitutes: [
+          { id: 's1', name: 'Oliver Smith', share: '50' },
+          { id: 's2', name: 'Amelia Smith', share: '30' },
+        ],
+      },
+    }),
+  ],
+};
+
+// A substitute row started and not finished. Same class of defect as the
+// unnamed beneficiary and the unnamed child: it finalises as a gap marker in
+// the operative words if nothing stops it.
+const substitutesBlankName = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
+      substitution: {
+        type: 'named',
+        substitutes: [
+          { id: 's1', name: 'Oliver Smith', share: '50' },
+          { id: 's2', name: '   ', share: '50' },
+        ],
+      },
+    }),
+  ],
+};
+
+// The long way round to "my children equally": every child named individually
+// and nobody else. Legally fine today, which is why it is advised and not
+// blocked — but a named list is closed on the day of signing, and the child it
+// closes out is one born afterwards.
+const substitutesAreMyChildren = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
+      substitution: {
+        type: 'named',
+        substitutes: [
+          { id: 's1', name: 'Oliver Smith', share: '50' },
+          { id: 's2', name: 'Amelia Smith', share: '50' },
+        ],
+      },
     }),
   ],
 };
@@ -534,7 +620,7 @@ const namedSubBlank = {
   ...clone(baseline),
   beneficiaries: [
     ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
-      substitution: { type: 'named', namedPerson: '' },
+      substitution: { type: 'named', substitutes: [] },
     }),
   ],
 };
@@ -735,4 +821,10 @@ module.exports = {
   // round 4 — the two the round-3 pass did not reach
   'child-only-on-residuary': childOnlyOnResiduary,
   'child-row-unfinished': childRowUnfinished,
+
+  // round 5 — a primary beneficiary with secondaries behind them
+  'substitutes-per-primary': substitutesPerPrimary,
+  'substitutes-share-short': substitutesShareShort,
+  'substitutes-blank-name': substitutesBlankName,
+  'substitutes-are-my-children': substitutesAreMyChildren,
 };

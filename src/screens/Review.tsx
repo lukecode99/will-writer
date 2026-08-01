@@ -125,10 +125,14 @@ function whatIfOutcome(b: Beneficiary, allBens: Beneficiary[]): string {
       return 'Your own children inherit equally, and a deceased child\'s share goes to their children';
     case 'per-stirpes':
       return `${b.name}'s own children inherit equally (per stirpes)`;
-    case 'named':
-      return sub.namedPerson
-        ? `Passes to ${sub.namedPerson}`
-        : 'Named recipient (not yet specified)';
+    case 'named': {
+      const named = sub.substitutes.filter(s => s.name.trim());
+      if (named.length === 0) return 'Named recipients (not yet specified)';
+      if (named.length === 1) return `Passes to ${named[0].name.trim()}`;
+      // Shares shown, because this row is read back to check the will says what
+      // was meant, and between two named substitutes the split IS the provision.
+      return named.map(s => `${s.name.trim()}: ${s.share.trim() || '?'}% of their share`).join(', ');
+    }
     case 'pro-rata': {
       const others = proRataResult(allBens, b.id);
       if (others.length === 0) return 'No other beneficiaries';

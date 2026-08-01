@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { WillData, Child } from '../types';
-import { dobError, parseUkDate, ageInYears, childrenSummary } from '../family';
+import { dobError, parseUkDate, ageInYears, childrenSummary, formatUkDateInput } from '../family';
 import { shared, C } from './shared';
 
 interface Props {
@@ -137,7 +137,7 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
             style={[shared.input, dobProblems[i] ? shared.inputError : null]}
             placeholder="DD/MM/YYYY"
             value={child.dob}
-            onChangeText={v => updateChild(child.id, 'dob', v)}
+            onChangeText={v => updateChild(child.id, 'dob', formatUkDateInput(v))}
             keyboardType="numbers-and-punctuation"
           />
           {dobProblems[i]

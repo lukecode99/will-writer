@@ -184,7 +184,12 @@ function sigBlock(ctx: DrawCtx, label: string, fields: string[]): DrawCtx {
 
 function substitutionClause(b: Beneficiary): string {
   const pct = pctLabel(b.percentage);
-  const sub = b.substitution || { type: 'per-stirpes', namedPerson: '' };
+  // Defended rather than trusted, even though the type says both are present:
+  // wills reach here from disk, and `normalizeSubstitution` is the only thing
+  // between a JSON file written by some other build and this function. A missing
+  // array would throw halfway through generating a document.
+  const raw = b.substitution || { type: 'per-stirpes' as const, substitutes: [] };
+  const sub = { type: raw.type, substitutes: Array.isArray(raw.substitutes) ? raw.substitutes : [] };
   const name = field(b.name, 'beneficiary name missing');
   const namePoss = `${name}'s`;
 
@@ -259,11 +264,47 @@ function substitutionClause(b: Beneficiary): string {
     );
   }
 
+  /**
+   * To people the testator names, in shares of this beneficiary's share.
+   *
+   * One substitute keeps the wording it has always had — "shall pass to X
+   * absolutely" — because there is nothing to apportion between, and a draft
+   * saved under the old single-name field migrates to exactly this case. An old
+   * will regenerated after the update reads word for word as it did before.
+   *
+   * Two or more are apportioned with "as to N% thereof". "Thereof" is doing the
+   * only job that matters in the sentence: it fixes the percentage to the share
+   * being substituted and not to the estate. Without it, "50% to Jacob" sitting
+   * inside a clause about a 60% share is a genuine ambiguity, and it is the one
+   * a reader is most likely to resolve the wrong way.
+   *
+   * The cross-accruer sentence closes the hole a list opens. If one of two named
+   * substitutes dies first and nothing says where their part goes, that part
+   * lapses: it is not caught by the gift over to the other, because there is no
+   * gift over, and it falls into partial intestacy while the rest of the will
+   * works fine. Sending it to the survivors of them keeps it inside the
+   * provision the testator actually made, and the ultimate-gift clause below
+   * catches the case where none of them survives.
+   */
   if (sub.type === 'named') {
-    const named = field(sub.namedPerson, 'substitute name missing');
+    const subs = sub.substitutes.length > 0 ? sub.substitutes : [{ id: '', name: '', share: '' }];
+
+    if (subs.length === 1) {
+      const named = field(subs[0].name, 'substitute name missing');
+      return (
+        `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
+        `to ${named} absolutely.${s33}`
+      );
+    }
+
+    const apportioned = subs
+      .map(s => `as to ${pctLabel(s.share)} thereof to ${field(s.name, 'substitute name missing')}`)
+      .join(', and ');
     return (
       `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
-      `to ${named} absolutely.${s33}`
+      `${apportioned}, absolutely. If any of them shall fail to survive me by 30 days, that ` +
+      `person's part shall pass to such of the others of them as shall so survive me, in ` +
+      `proportion to their respective parts.${s33}`
     );
   }
 

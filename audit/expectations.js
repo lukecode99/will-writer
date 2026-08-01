@@ -773,6 +773,84 @@ const RAW = {
     // which is how someone finds the row they left blank.
     check: documentSays('Oliver Smith (born 1 June 2004)', 'Amelia Smith (born 12 September 2006)'),
   },
+
+  /**
+   * Everything to the partner, and behind her a list of people chosen
+   * individually — the provision the app could not express at all before.
+   *
+   * Three things are asserted, and each is a different way the clause could be
+   * right-looking and wrong.
+   *
+   * The apportionment must say "thereof". Without it, "50% to Oliver Smith"
+   * inside a clause about Jane's share is ambiguous between half of her share
+   * and half of the estate, and a reader resolving it the wrong way is not
+   * making an unreasonable mistake.
+   *
+   * The cross-accruer sentence must be there. A list of substitutes with no gift
+   * over is the hole the list itself opens: one of the three dies first, their
+   * part is caught by nothing, and it drops into partial intestacy while every
+   * other clause works perfectly.
+   *
+   * And no advisory may suggest the class gift. Two of these three are the
+   * testator's children but Daniel Doyle is not, so "my children equally" would
+   * disinherit him — a suggestion that fired here would be advice to break the
+   * will. This is the assertion that makes the advisory's precision load-bearing
+   * rather than incidental.
+   */
+  'substitutes-per-primary': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays(
+        'as to 50% thereof to Oliver Smith',
+        'as to 30% thereof to Amelia Smith',
+        'as to 20% thereof to Daniel Doyle',
+        "that person's part shall pass to such of the others of them as shall so survive me",
+      ),
+      advisoryDoesNotMention('not left anything in this will'),
+      advisoryDoesNotMention('are exactly your children'),
+    ),
+  },
+
+  /**
+   * Substitute shares coming to 80% of the share they are shares of.
+   *
+   * Refused rather than warned. The will reads as complete — every clause is
+   * well-formed and the residuary percentages themselves total 100 — and it is
+   * silent about a fifth of the estate on that branch. Nothing downstream would
+   * notice, which is the definition of the failure this app cannot afford.
+   */
+  'substitutes-share-short': {
+    verdict: 'REFUSED',
+    problemsMention: ['share out 80%'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /** A substitute row with no name in it — same class as the unnamed child. */
+  'substitutes-blank-name': {
+    verdict: 'REFUSED',
+    problemsMention: ['has no name'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /**
+   * Every child named individually and nobody else.
+   *
+   * Valid, so it generates — and advised, because the two provisions differ only
+   * in a future nobody is thinking about while filling in the form. A class gift
+   * picks up a child born after signing; this list cannot, and nobody rewrites a
+   * will for a reason they do not know exists.
+   */
+  'substitutes-are-my-children': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      advisoryMentions('are exactly your children'),
+      advisoryMentions('covers a child born after you sign'),
+    ),
+  },
 };
 
 // Attach the common invariants to every scenario.

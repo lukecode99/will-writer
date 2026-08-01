@@ -290,10 +290,62 @@ await test('substitution types the build does not recognise', async () => {
   // residuary screen and in the preview, where it can be seen and put back.
   check('an unrecognised substitution falls back to the default, not to nothing',
     b.substitution.type === 'per-stirpes');
-  // This value is concatenated straight into a sentence of the will, so a
+  // These values are concatenated straight into a sentence of the will, so a
   // number here becomes a number in the document.
   check('a named person that is not a string is not concatenated into the will',
-    c.substitution.namedPerson === '');
+    Array.isArray(c.substitution.substitutes) && c.substitution.substitutes.length === 0);
+});
+
+/**
+ * The substitution field changed shape: one free-text `namedPerson` became a
+ * list of people with a share each.
+ *
+ * Every will already saved on a phone has the old shape, and this is the only
+ * code between those files and a document that gets signed. What it must
+ * guarantee is not that the draft survives but that it still SAYS THE SAME
+ * THING — a migration that quietly re-apportions an estate would be worse than
+ * one that failed loudly.
+ *
+ * The old field meant "the whole of this beneficiary's share to this person",
+ * so it migrates to a single entry on 100%, which is the one case the clause
+ * generator writes without any apportionment at all: "shall pass to X
+ * absolutely", word for word what the old build produced.
+ *
+ * The string is deliberately not parsed. "Jacob and Keira in equal shares" is
+ * two people to a reader, but it is also exactly how a couple taking jointly
+ * gets typed, and splitting it would be the app guessing at who inherits. It
+ * comes back whole, on a screen that now shows it in a list with a share box
+ * beside it, where the ambiguity is visible and the user's to resolve.
+ */
+await test('substitutions saved before substitutes were a list', async () => {
+  const docs = [{
+    id: 'd1', step: 0, createdAt: 1, updatedAt: 1,
+    data: {
+      fullName: 'Luke Holder',
+      children: [],
+      beneficiaries: [
+        { id: 'b1', name: 'Sam', percentage: '60', substitution: { type: 'named', namedPerson: 'Michael Doyle' } },
+        { id: 'b2', name: 'Amy', percentage: '40', substitution: { type: 'named', namedPerson: 'Jacob and Keira in equal shares' } },
+      ],
+      specificGifts: [], guardians: [],
+    },
+  }];
+  const { storage } = freshStorage({ [DOCS_KEY]: JSON.stringify(docs) });
+  await storage.hydrateStorage();
+  const [a, b] = storage.loadWillData('d1').beneficiaries;
+
+  check('the old single name migrates to one substitute, not to none',
+    a.substitution.substitutes.length === 1 && a.substitution.substitutes[0].name === 'Michael Doyle');
+  // 100% is what makes the regenerated will identical: one substitute on the
+  // whole share is written without apportionment, so no "as to N% thereof"
+  // appears where the old document had none.
+  check('that substitute takes the whole of the share, as the old wording did',
+    a.substitution.substitutes[0].share === '100');
+  check('every migrated substitute has an id, so the list can be edited',
+    typeof a.substitution.substitutes[0].id === 'string' && a.substitution.substitutes[0].id !== '');
+  check('a name that reads like two people is not split on the app\'s guess',
+    b.substitution.substitutes.length === 1
+      && b.substitution.substitutes[0].name === 'Jacob and Keira in equal shares');
 });
 
 console.log(`\n${ran} checks, ${ran - failures} passed, ${failures} failed.`);
