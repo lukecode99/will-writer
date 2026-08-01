@@ -171,7 +171,19 @@ const RAW = {
       'APPOINTMENT OF GUARDIANS',
       'TRUSTS FOR MINOR BENEFICIARIES',
     ],
-    check: noMarkers,
+    check: all(
+      noMarkers,
+      documentSays(
+        // s.15 as extended by the Civil Partnership Act 2004 — a beneficiary's
+        // civil partner witnessing voids the gift just as a spouse does, so the
+        // signing-line label has to say so.
+        'must not be a beneficiary or the spouse or civil partner of a beneficiary',
+        // The sweep-up backstop is conditioned on the PART failing, not the
+        // whole estate — one surviving beneficiary elsewhere must not block it
+        // while a failed branch falls into intestacy.
+        'If and so far as any part of my residuary estate is not effectively disposed of by the foregoing provisions of this clause, that part shall pass to the British Heart Foundation',
+      ),
+    ),
   },
 
   // ── The four fatal findings, each pinned by the case that produced it ─────
@@ -220,6 +232,12 @@ const RAW = {
     mustNotContain: ['DRAFT — DO NOT SIGN'],
     check: all(
       noMarkers,
+      // The trust's deemed-failure limb must route through the substitution
+      // provisions rather than granting the trustees a dispositive discretion.
+      // Two needles because the sentence straddles a page break in this
+      // fixture, and the page footer interrupts a single one.
+      documentSays('their share shall pass as if that beneficiary'),
+      documentSays('had failed to survive me by 30 days, in accordance with the substitution provisions set out above.'),
       advisoryDoesNotMention('have not appointed a guardian'),
       // This fixture flags Oliver as a minor and leaves Amelia, born 2019,
       // unflagged. That was there before the switch was checked against
@@ -418,7 +436,11 @@ const RAW = {
     check: all(
       noMarkers,
       documentSays(
-        "Oliver Smith's share shall pass to Michael Doyle absolutely.",
+        // The substitute takes on the same 30-day condition as every other
+        // taker, and the branch closes its own gap rather than lapsing into
+        // partial intestacy if the substitute dies too.
+        "Oliver Smith's share shall pass to Michael Doyle, provided that Michael Doyle survives me by 30 days",
+        'and if Michael Doyle shall not so survive me, that share shall be divided among the other surviving residuary beneficiaries',
         // The words that make the intention express rather than a matter of
         // construction, and the reason this scenario exists.
         'Oliver Smith is my child. I direct that section 33 of the Wills Act 1837 shall not apply ' +
@@ -460,16 +482,17 @@ const RAW = {
 
   // ── the list of children unconfirmed ──────────────────────────────────────
   'children-unconfirmed': {
-    // Warned, not blocked, and the document itself is untouched. The
-    // confirmation is a question we put to the user, not a term of the will,
-    // and it has no business appearing in what they sign.
-    verdict: 'ok',
-    mustNotContain: ['DRAFT — DO NOT SIGN'],
-    check: all(
-      noMarkers,
-      advisoryMentions('not confirmed that every one of your children is listed'),
-      documentDoesNotSay('confirmed that every one of your children'),
-    ),
+    // Blocked, not warned. It used to be a warning on the theory the Family
+    // screen could not be passed without answering — but the Review Edit links
+    // and a resumed old draft reach generation without crossing that screen's
+    // Continue button, and a child left out of a will is the most expensive
+    // omission this app can help someone make. The draft's problems page must
+    // tell the user this is what is holding the document back — the phrase
+    // appears there as advice, never as a term of the will.
+    verdict: 'REFUSED',
+    problemsMention: ['not confirmed that every one of your children is listed'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+    check: documentSays('You have not confirmed that every one of your children is listed'),
   },
 
   'divorced-spouse-not-beneficiary': {
@@ -482,16 +505,16 @@ const RAW = {
   },
 
   'guardians-substitute-only': {
-    // A substitute with nobody to substitute for appoints no one. Promoting
-    // them to first choice would be the app quietly deciding who raises the
-    // children, so the clause is left out and the reason is spelled out.
-    verdict: 'ok',
-    mustNotContain: [
-      'APPOINTMENT OF GUARDIANS',
-      'Deborah Clark',
-      'DRAFT — DO NOT SIGN',
-    ],
-    check: all(noMarkers, advisoryMentions('substitute guardian but no first choice')),
+    // A substitute with nobody to substitute for appoints no one, while
+    // reading on screen as though it appoints someone. Promoting them to first
+    // choice would be the app quietly deciding who raises the children, so
+    // this now blocks — a warning beside a Continue button is bypassed by the
+    // Review Edit links and a resumed draft, which is how it reached
+    // generation in the first place.
+    verdict: 'REFUSED',
+    problemsMention: ['substitute guardian but no first choice'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+    mustNotContain: ['APPOINTMENT OF GUARDIANS', 'Deborah Clark'],
   },
 
   'adult-children-stale-guardians': {
@@ -582,10 +605,11 @@ const RAW = {
     mustContain: [
       'Middlesex',
       'I appoint Robert Hughes of',
-      'I also appoint Sarah Hughes',
     ],
     mustNotContain: ['DRAFT — DO NOT SIGN'],
-    check: noMarkers,
+    // The baseline answers the role question as 'substitute', so the second
+    // appointment is conditional rather than "I also appoint".
+    check: all(noMarkers, documentSays('unable or unwilling to act, I appoint Sarah Hughes')),
   },
 
   'backstop-blank': {
@@ -738,7 +762,7 @@ const RAW = {
       // The per-stirpes wording gives the estate to Jane's children. If it
       // appears here the two branches have been confused, which is the failure
       // this option exists to prevent.
-      documentDoesNotSay("Jane Elizabeth Smith's children then living"),
+      documentDoesNotSay("such of Jane Elizabeth Smith's children"),
       // No section 33 recital: it is about a gift to a child of mine, and Jane
       // is not one.
       documentDoesNotSay('section 33 of the Wills Act 1837 shall not apply'),
@@ -760,7 +784,13 @@ const RAW = {
     mustNotContain: ['DRAFT — DO NOT SIGN'],
     check: all(
       noMarkers,
-      documentSays("shall pass in equal shares to Jane Elizabeth Smith's children then living"),
+      // Both limbs key to the same 30-day window as the gift itself — the old
+      // "children then living" left a child who outlived the beneficiary but
+      // died before the testator in neither limb.
+      documentSays(
+        "shall pass in equal shares to such of Jane Elizabeth Smith's children as shall survive me by 30 days",
+        'died in my lifetime or failed to survive me by 30 days',
+      ),
       documentDoesNotSay('such of my children as shall survive me'),
       advisoryMentions('not left anything in this will'),
     ),
@@ -877,6 +907,10 @@ const RAW = {
         'as to 30% thereof to Amelia Smith',
         'as to 20% thereof to Daniel Doyle',
         "that person's part shall pass to such of the others of them as shall so survive me",
+        // And the branch closes its own gap: if every substitute fails, the
+        // share goes to the other surviving residuary beneficiaries rather
+        // than lapsing into partial intestacy.
+        'and if none of them shall so survive me',
       ),
       advisoryDoesNotMention('not left anything in this will'),
       advisoryDoesNotMention('are exactly your children'),
@@ -920,6 +954,174 @@ const RAW = {
       advisoryMentions('are exactly your children'),
       advisoryMentions('covers a child born after you sign'),
     ),
+  },
+
+  // ── Round 6: fixes from the 01-Aug-2026 regression audit ─────────────────
+
+  /**
+   * Wills Act 1837 s.18(3) / s.18B(3). Marriage or civil partnership revokes a
+   * will silently and in its entirety; the saving clause must name the
+   * particular person and say the will is to survive that marriage.
+   */
+  'expectation-of-marriage': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays(
+        'I make this Will in expectation of my forthcoming marriage to, or civil partnership with, Samantha Carter, and I intend that this Will shall not be revoked by that marriage or civil partnership.',
+      ),
+    ),
+  },
+
+  /** "Whoever I marry" does not engage s.18(3), so the name is required. */
+  'expectation-of-marriage-unnamed': {
+    verdict: 'REFUSED',
+    problemsMention: ['did not name the person you expect to marry'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+    check: documentDoesNotSay('in expectation of my forthcoming marriage'),
+  },
+
+  /**
+   * The age gate used to run only when something was typed — the one person
+   * who skipped the question skipped the gate, and the will went out with no
+   * date of birth to identify the testator.
+   */
+  'dob-blank': {
+    verdict: 'REFUSED',
+    problemsMention: ['date of birth is missing'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  'marital-status-missing': {
+    verdict: 'REFUSED',
+    problemsMention: ['marital status is missing'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /**
+   * A charity taking residue. Every clause about it must be worded for an
+   * organisation: it ceases to exist or amalgamates, it has no children, and
+   * its share is never held on trust until it turns 18.
+   */
+  'charity-residuary': {
+    verdict: 'ok',
+    mustContain: ['• Cancer Research UK (a registered charity) — 50%'],
+    mustNotContain: ['DRAFT — DO NOT SIGN', 'TRUSTS FOR MINOR BENEFICIARIES'],
+    check: all(
+      noMarkers,
+      documentSays(
+        'If Cancer Research UK (50%) shall have ceased to exist or amalgamated with another charity or body at my death',
+      ),
+      documentDoesNotSay(
+        "Cancer Research UK's children",
+        'Cancer Research UK (50%) shall fail to survive me by 30 days',
+      ),
+    ),
+  },
+
+  /**
+   * A charity with every person-shaped answer set on it. All three
+   * contradictions block — each would put family law onto a company in the
+   * operative words of a signed document.
+   */
+  'charity-person-answers': {
+    verdict: 'REFUSED',
+    problemsMention: [
+      'marked both as a charity and as your own child',
+      'marked both as a charity and as under 18',
+      'so its share cannot pass to',
+    ],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /**
+   * The second executor question, answered each way. The clause used to say
+   * "jointly with or as a substitute for the above" — both at once, a
+   * construction dispute decided at probate when the one person who knew is
+   * dead.
+   */
+  'executor-role-joint': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays('to be Executor of this my Will jointly with the said Robert Hughes'),
+      documentDoesNotSay('unable or unwilling to act, I appoint Sarah Hughes'),
+    ),
+  },
+
+  /** Unanswered — the state of every draft saved before the question existed. */
+  'executor-role-missing': {
+    verdict: 'REFUSED',
+    problemsMention: ['acts jointly with your first executor or only as a substitute'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+    check: documentSays('[JOINTLY WITH OR AS A SUBSTITUTE FOR THE FIRST EXECUTOR — NOT YET CHOSEN]'),
+  },
+
+  /**
+   * An address typed under an empty name. The clause is only written when the
+   * name is filled in, so this executor used to vanish from the document
+   * without a word of complaint.
+   */
+  'executor-address-no-name': {
+    verdict: 'REFUSED',
+    problemsMention: ['address for a second executor but no name'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+    check: documentDoesNotSay('9 Birch Way'),
+  },
+
+  /** A guardian row started and never named, with minor children in the will. */
+  'guardian-unnamed': {
+    verdict: 'REFUSED',
+    problemsMention: ['One of your guardians has no name'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /**
+   * A child's date of birth that is not a date. Empty is allowed — the
+   * declaration simply names the child — but a typo must not silently drop
+   * the identifying detail the user believed they had provided.
+   */
+  'child-dob-garbage': {
+    verdict: 'REFUSED',
+    problemsMention: ['date of birth for Oliver Smith is not a real date'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /** "If Rita fails to survive me, this gift shall pass to Rita." */
+  'gift-substitute-self': {
+    verdict: 'REFUSED',
+    problemsMention: ['same person as the recipient'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /** The residuary version of the same nothing-clause. */
+  'residuary-self-substitute': {
+    verdict: 'REFUSED',
+    problemsMention: ['is Jane Elizabeth Smith themselves'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /**
+   * A 185-character unbroken name. The wrapper must break the token rather
+   * than centre a line that starts hundreds of points off the left edge —
+   * text drawn at negative x exists in the PDF but can never be seen.
+   */
+  'long-unbroken-name': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, ({ strict, draft }) => {
+      const rendered = strict.status === 'ok' ? strict : draft;
+      const out = [];
+      for (const r of rendered.records) {
+        if (typeof r.x === 'number' && r.x < 0) {
+          out.push(`text drawn off the left edge at x=${r.x.toFixed(1)}: ${JSON.stringify(String(r.text).slice(0, 40))}`);
+          break;
+        }
+      }
+      return out;
+    }),
   },
 };
 

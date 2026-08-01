@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   WillData, EMPTY_WILL, Beneficiary, BeneficiarySubstitution, Guardian, SpecificGift,
-  Substitute, SubstitutionType,
+  Substitute, SubstitutionType, Child, Executor,
 } from './types';
 
 const DOCS_KEY = 'willWriter.docs.v1';
@@ -58,6 +58,30 @@ function newId(): string {
 }
 
 const SUBSTITUTION_TYPES: SubstitutionType[] = ['per-stirpes', 'named', 'pro-rata', 'own-children'];
+const MARITAL_STATUSES = ['single', 'married', 'civilPartnership', 'divorced', 'widowed'];
+const BURIAL_PREFERENCES = ['burial', 'cremation', 'noPreference'];
+
+/**
+ * A string, or nothing. `name || ''` let a number through — `fullName: 12345`
+ * crashed the Home screen for every will, because everything downstream calls
+ * `.trim()` on what this file hands out. These values also go straight into
+ * the operative words of a document, so the only types allowed out of here are
+ * the types the rest of the app was written against.
+ */
+function str(v: any): string {
+  return typeof v === 'string' ? v : '';
+}
+
+/** A percentage may have been stored as a number by some other build; that is
+ * losslessly a string, unlike a name, so it is converted rather than blanked. */
+function numericStr(v: any): string {
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return str(v);
+}
+
+function asObjectArray(value: any): any[] {
+  return Array.isArray(value) ? value.filter(el => el && typeof el === 'object') : [];
+}
 
 /**
  * A substitution type this build does not recognise falls back to per stirpes.
@@ -80,23 +104,33 @@ const SUBSTITUTION_TYPES: SubstitutionType[] = ['per-stirpes', 'named', 'pro-rat
  * it can be seen and put back.
  */
 function normalizeSubstitution(sub: any): BeneficiarySubstitution {
-  const type: SubstitutionType = SUBSTITUTION_TYPES.includes(sub?.type) ? sub.type : 'per-stirpes';
+  // When the stored type is unrecognisable but a legacy namedPerson is there,
+  // the intent was plainly "to a named person" — falling back to per-stirpes
+  // with an inoperative substitutes list rerouted the share to the
+  // beneficiary's issue instead of the person the user named, which is exactly
+  // the silent re-routing this migration promises never to do.
+  const legacyNamed = typeof sub?.namedPerson === 'string' && sub.namedPerson.trim() !== '';
+  const type: SubstitutionType = SUBSTITUTION_TYPES.includes(sub?.type)
+    ? sub.type
+    : legacyNamed ? 'named' : 'per-stirpes';
 
   // A list of substitutes, from a build that has one.
   //
   // Typed rather than trusted at every field: these are concatenated straight
   // into a sentence of the will, so a number where a name should be becomes a
   // number in the document, and a share that is not a string reaches a parser
-  // that expects one.
+  // that expects one. An empty list falls through — a corrupted mix of an
+  // empty `substitutes` and a populated `namedPerson` should still find the
+  // name rather than an inoperative list.
   if (Array.isArray(sub?.substitutes)) {
     const substitutes: Substitute[] = sub.substitutes
       .filter((s: any) => s && typeof s === 'object')
       .map((s: any) => ({
         id: typeof s.id === 'string' && s.id ? s.id : Math.random().toString(36).slice(2),
-        name: typeof s.name === 'string' ? s.name : '',
-        share: typeof s.share === 'string' ? s.share : '',
+        name: str(s.name),
+        share: numericStr(s.share),
       }));
-    return { type, substitutes };
+    if (substitutes.length > 0 || !legacyNamed) return { type, substitutes };
   }
 
   // A draft saved before substitutes could be a list, when the field was one
@@ -125,43 +159,55 @@ function normalizeSubstitution(sub: any): BeneficiarySubstitution {
   return { type, substitutes: [] };
 }
 
+/**
+ * Booleans are `=== true`, never `?? false`. The string 'false' — a shape a
+ * JSON file from some other tool can easily hold — survives `?? false` as
+ * truthy, and what that produced in a FINAL will was a private individual
+ * declared "(a registered charity)" and an adult spouse's share "held on
+ * trust until age 18". A wrong operative clause, not a crash.
+ */
 function normalizeBeneficiary(b: any): Beneficiary {
   return {
-    id: b.id || Math.random().toString(36).slice(2),
-    name: b.name || '',
-    relationship: b.relationship || '',
-    percentage: b.percentage || '',
-    isOwnChild: b.isOwnChild ?? false,
-    isMinor: b.isMinor ?? false,
+    id: typeof b.id === 'string' && b.id ? b.id : Math.random().toString(36).slice(2),
+    name: str(b.name),
+    relationship: str(b.relationship),
+    percentage: numericStr(b.percentage),
+    isOwnChild: b.isOwnChild === true,
+    isMinor: b.isMinor === true,
+    isCharity: b.isCharity === true,
     substitution: normalizeSubstitution(b.substitution),
     // Drafts saved before beneficiaries could be picked from the family details
     // reopen unlinked, which is what they are: names typed by hand. They carry
     // on being matched by name, exactly as they were. Inventing a link by
     // guessing from the spelling is the failure this field exists to remove.
-    linkedPersonId: typeof b.linkedPersonId === 'string' ? b.linkedPersonId : '',
+    linkedPersonId: str(b.linkedPersonId),
   };
 }
 
 function normalizeGift(g: any): SpecificGift {
   return {
-    id: g.id || Math.random().toString(36).slice(2),
-    recipient: g.recipient || '',
-    description: g.description || '',
-    isCharity: g.isCharity ?? false,
+    id: typeof g.id === 'string' && g.id ? g.id : Math.random().toString(36).slice(2),
+    recipient: str(g.recipient),
+    description: str(g.description),
+    isCharity: g.isCharity === true,
     // Drafts saved before the tax choice existed had "free of inheritance tax"
     // hardcoded onto every gift. They reopen on the safer default instead, and
     // the user is shown the choice on the Specific Gifts screen.
     taxBurden: g.taxBurden === 'freeOfTax' ? 'freeOfTax' : 'bearsOwnTax',
-    substitutionType: g.substitutionType || 'residue',
-    substitutionRecipient: g.substitutionRecipient || '',
+    // Whitelisted like the beneficiary path: an unknown type used to fall to
+    // 'residue' by || while KEEPING the unknown string was the beneficiary
+    // bug; here `|| 'residue'` kept whatever arrived and the clause switch
+    // silently ignored the named recipient.
+    substitutionType: g.substitutionType === 'named' ? 'named' : 'residue',
+    substitutionRecipient: str(g.substitutionRecipient),
   };
 }
 
 function normalizeGuardian(g: any): Guardian {
   return {
-    id: g.id || Math.random().toString(36).slice(2),
-    name: g.name || '',
-    address: g.address || '',
+    id: typeof g.id === 'string' && g.id ? g.id : Math.random().toString(36).slice(2),
+    name: str(g.name),
+    address: str(g.address),
     // Drafts saved before the split appointed every guardian jointly. They
     // reopen as all-primary, which is the same appointment they already had:
     // reopening a will must not quietly change who it appoints.
@@ -169,17 +215,76 @@ function normalizeGuardian(g: any): Guardian {
   };
 }
 
+/**
+ * Child ids are backfilled and de-duplicated. Beneficiaries hold a
+ * `linkedPersonId` pointing at a child id, so two children sharing an id made
+ * every linked reference collapse to whichever came first — a beneficiary
+ * stored as one child was rewritten to another by the sync, and edits and
+ * removals fanned out across the id-sharing rows. A backfilled id breaks no
+ * link (nothing links to ''), and re-idling the LATER duplicate keeps existing
+ * links resolving to the same row they already resolved to.
+ */
+function normalizeChild(c: any, seenIds: Set<string>): Child {
+  let id = typeof c.id === 'string' && c.id ? c.id : '';
+  if (!id || seenIds.has(id)) id = Math.random().toString(36).slice(2);
+  seenIds.add(id);
+  return {
+    id,
+    name: str(c.name),
+    dob: str(c.dob),
+  };
+}
+
+function normalizeExecutor(e: any): Executor {
+  return {
+    name: str(e?.name),
+    address: str(e?.address),
+  };
+}
+
+/**
+ * Every known field is rebuilt explicitly; unknown fields ride along untouched.
+ *
+ * The old `{...EMPTY_WILL, ...parsed}` merge meant an explicit `null` in the
+ * file overrode the default and reached screens that call `.trim()` — one
+ * `fullName: null` bricked the Home screen for every will. Children, the three
+ * executors and all the scalars were never normalized at all. The spread of
+ * `p` FIRST is what keeps a field written by a newer build alive across a save
+ * from this one.
+ */
 function normalizeWill(parsed: any): WillData {
-  const merged: WillData = { ...EMPTY_WILL, ...(parsed || {}) };
-  merged.beneficiaries = (merged.beneficiaries || []).map(normalizeBeneficiary);
-  merged.specificGifts = (merged.specificGifts || []).map(normalizeGift);
-  merged.guardians = (merged.guardians || []).map(normalizeGuardian);
-  // Drafts saved before the home screen existed were all the user's own will.
-  merged.isForSomeoneElse = parsed?.isForSomeoneElse === true;
-  // A draft written before the question existed was never asked it. Only an
-  // explicit true counts — anything else reopens unconfirmed and asks.
-  merged.childrenConfirmed = parsed?.childrenConfirmed === true;
-  return merged;
+  const p = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  const seenChildIds = new Set<string>();
+  return {
+    ...p,
+    // Drafts saved before the home screen existed were all the user's own will.
+    isForSomeoneElse: p.isForSomeoneElse === true,
+    fullName: str(p.fullName),
+    address: str(p.address),
+    dob: str(p.dob),
+    maritalStatus: MARITAL_STATUSES.includes(p.maritalStatus) ? p.maritalStatus : '',
+    partnerName: str(p.partnerName),
+    partnerAddress: str(p.partnerAddress),
+    children: asObjectArray(p.children).map(c => normalizeChild(c, seenChildIds)),
+    // A draft written before the question existed was never asked it. Only an
+    // explicit true counts — anything else reopens unconfirmed and asks.
+    childrenConfirmed: p.childrenConfirmed === true,
+    primaryExecutor: normalizeExecutor(p.primaryExecutor),
+    secondaryExecutor: normalizeExecutor(p.secondaryExecutor),
+    secondaryExecutorRole:
+      p.secondaryExecutorRole === 'joint' || p.secondaryExecutorRole === 'substitute'
+        ? p.secondaryExecutorRole
+        : '',
+    backupExecutor: normalizeExecutor(p.backupExecutor),
+    guardians: asObjectArray(p.guardians).map(normalizeGuardian),
+    specificGifts: asObjectArray(p.specificGifts).map(normalizeGift),
+    beneficiaries: asObjectArray(p.beneficiaries).map(normalizeBeneficiary),
+    ultimateBackstop: str(p.ultimateBackstop),
+    funeralWishes: str(p.funeralWishes),
+    burialPreference: BURIAL_PREFERENCES.includes(p.burialPreference) ? p.burialPreference : '',
+    expectingMarriage: p.expectingMarriage === true,
+    intendedSpouseName: str(p.intendedSpouseName),
+  };
 }
 
 function normalizeDoc(d: any, index: number): WillDoc {
@@ -218,7 +323,31 @@ export async function hydrateStorage(): Promise<void> {
         AsyncStorage.setItem(CORRUPT_KEY, rawDocs).catch(() => {});
         parsed = null;
       }
-      docs = Array.isArray(parsed) ? parsed.map(normalizeDoc) : [];
+      // Each will normalizes inside its own try/catch. One malformed element
+      // used to throw out of the shared map into the outer catch, which set
+      // docs = [] — every HEALTHY will gone from the list, and the next write
+      // persisted the wipe while the Save button reported success. A bad doc
+      // is parked where it can be recovered; its siblings survive.
+      const good: WillDoc[] = [];
+      const bad: any[] = [];
+      const seenDocIds = new Set<string>();
+      asObjectArray(parsed).forEach((d, index) => {
+        try {
+          const doc = normalizeDoc(d, index);
+          // Two wills sharing an id made deleting one delete both — deleteWill
+          // filters by id. Re-idling the later duplicate keeps both.
+          if (seenDocIds.has(doc.id)) doc.id = `recovered-${index}-${newId()}`;
+          seenDocIds.add(doc.id);
+          good.push(doc);
+        } catch (err) {
+          console.warn('One saved will could not be read; keeping a copy', err);
+          bad.push(d);
+        }
+      });
+      if (bad.length > 0) {
+        AsyncStorage.setItem(CORRUPT_KEY, JSON.stringify(bad)).catch(() => {});
+      }
+      docs = good;
     } else if (legacyWill) {
       // One saved will from before this screen existed. It is the user's own.
       const n = legacyStep ? parseInt(legacyStep, 10) : 0;
@@ -226,7 +355,7 @@ export async function hydrateStorage(): Promise<void> {
       docs = [{
         id: newId(),
         data: normalizeWill(JSON.parse(legacyWill)),
-        step: Number.isNaN(n) ? 0 : n,
+        step: Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0,
         createdAt: now,
         updatedAt: now,
       }];
@@ -242,13 +371,38 @@ export async function hydrateStorage(): Promise<void> {
   hydrated = true;
 }
 
+/**
+ * Autosave runs behind a keystroke, so a failure has no screen of its own to
+ * appear on — which is how a full disk used to look exactly like a working
+ * save for as long as the app stayed open. The app registers here to hear
+ * about a run of failures; a call with 0 announces recovery so the listener
+ * can re-arm.
+ */
+let persistFailureListener: ((consecutiveFailures: number) => void) | null = null;
+let persistFailures = 0;
+
+export function onPersistFailure(
+  listener: ((consecutiveFailures: number) => void) | null,
+): void {
+  persistFailureListener = listener;
+}
+
 function persist(): void {
-  AsyncStorage.setItem(DOCS_KEY, JSON.stringify(docs)).catch(err => {
-    // There is nothing useful to show the user mid-keystroke, and the
-    // in-memory copy is still correct, but an unhandled rejection would take
-    // the whole app down.
-    console.warn('Could not save the will', err);
-  });
+  AsyncStorage.setItem(DOCS_KEY, JSON.stringify(docs))
+    .then(() => {
+      if (persistFailures > 0) {
+        persistFailures = 0;
+        if (persistFailureListener) persistFailureListener(0);
+      }
+    })
+    .catch(err => {
+      // There is nothing useful to show the user mid-keystroke, and the
+      // in-memory copy is still correct, but an unhandled rejection would take
+      // the whole app down.
+      console.warn('Could not save the will', err);
+      persistFailures += 1;
+      if (persistFailureListener) persistFailureListener(persistFailures);
+    });
 }
 
 function find(id: string): WillDoc | undefined {
@@ -284,7 +438,11 @@ export function createWill(isForSomeoneElse: boolean): string {
 
 export function loadWillData(id: string): WillData {
   const doc = find(id);
-  return doc ? { ...doc.data } : { ...EMPTY_WILL };
+  // A DEEP copy. The shallow one shared its nested arrays and objects with the
+  // persistent store, so a mutation in a screen was a mutation of the saved
+  // will — latent, because the screens happen to replace rather than mutate
+  // today. JSON round-trip rather than structuredClone: Hermes.
+  return JSON.parse(JSON.stringify(doc ? doc.data : EMPTY_WILL));
 }
 
 export function saveWillData(id: string, data: WillData): void {

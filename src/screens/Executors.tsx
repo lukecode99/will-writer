@@ -1,9 +1,9 @@
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { WillData, Executor } from '../types';
 import { blockingProblems } from '../validation';
-import { shared } from './shared';
-import { notify } from '../platform';
+import { C, shared } from './shared';
+import { notify, confirmDestructive } from '../platform';
 
 interface Props {
   data: WillData;
@@ -67,12 +67,72 @@ export default function Executors({ data, onChange, onNext, onBack }: Props) {
       />
 
       {showSecondary ? (
-        <ExecForm
-          label="Secondary Executor (optional)"
-          hint="Acts jointly or as a substitute if the primary is unable."
-          value={data.secondaryExecutor}
-          onChange={v => onChange({ secondaryExecutor: v })}
-        />
+        <>
+          <ExecForm
+            label="Secondary Executor (optional)"
+            hint="Acts jointly with your first executor, or steps in only if they cannot act — you choose which below."
+            value={data.secondaryExecutor}
+            onChange={v => onChange({ secondaryExecutor: v })}
+          />
+          {/* The appointment is a different appointment depending on the answer,
+              and the will used to paper over the gap with a bracketed marker.
+              Now the document refuses to finalise until this is answered, so
+              the question has to be on the screen that creates the need. */}
+          {data.secondaryExecutor.name.trim() ? (
+            <View style={shared.card}>
+              <Text style={shared.cardTitle}>How should {data.secondaryExecutor.name.trim()} act? *</Text>
+              {([
+                {
+                  value: 'joint',
+                  title: 'Jointly with the first executor',
+                  detail: 'Both are executors from the start and act together.',
+                },
+                {
+                  value: 'substitute',
+                  title: 'Only as a substitute',
+                  detail: `Steps in only if ${data.primaryExecutor.name.trim() || 'your first executor'} is unable or unwilling to act.`,
+                },
+              ] as const).map(opt => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.roleOption, data.secondaryExecutorRole === opt.value ? styles.roleOptionActive : null]}
+                  onPress={() => onChange({ secondaryExecutorRole: opt.value })}
+                >
+                  <Text style={[styles.roleTitle, data.secondaryExecutorRole === opt.value ? styles.roleTitleActive : null]}>
+                    {opt.title}
+                  </Text>
+                  <Text style={styles.roleDetail}>{opt.detail}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+          {/* Once opened, this form could never be closed again — the only
+              way to withdraw a second executor was to blank both fields and
+              live with the empty card. */}
+          <TouchableOpacity
+            style={styles.removeLink}
+            onPress={() => {
+              const clear = () => {
+                onChange({
+                  secondaryExecutor: { ...data.secondaryExecutor, name: '', address: '' },
+                  secondaryExecutorRole: '',
+                });
+                setShowSecondary(false);
+              };
+              if (!data.secondaryExecutor.name.trim() && !data.secondaryExecutor.address.trim()) {
+                clear();
+                return;
+              }
+              confirmDestructive(
+                `Remove ${data.secondaryExecutor.name.trim() || 'the second executor'} as an executor?`,
+                'Remove',
+                clear,
+              );
+            }}
+          >
+            <Text style={styles.removeLinkText}>Remove this executor</Text>
+          </TouchableOpacity>
+        </>
       ) : (
         <TouchableOpacity style={shared.addBtn} onPress={() => setShowSecondary(true)}>
           <Text style={shared.addBtnText}>+ Add a second executor</Text>
@@ -80,12 +140,34 @@ export default function Executors({ data, onChange, onNext, onBack }: Props) {
       )}
 
       {showBackup ? (
-        <ExecForm
-          label="Backup Executor (optional)"
-          hint="Appointed only if neither primary nor secondary can act."
-          value={data.backupExecutor}
-          onChange={v => onChange({ backupExecutor: v })}
-        />
+        <>
+          <ExecForm
+            label="Backup Executor (optional)"
+            hint="Appointed only if neither primary nor secondary can act."
+            value={data.backupExecutor}
+            onChange={v => onChange({ backupExecutor: v })}
+          />
+          <TouchableOpacity
+            style={styles.removeLink}
+            onPress={() => {
+              const clear = () => {
+                onChange({ backupExecutor: { ...data.backupExecutor, name: '', address: '' } });
+                setShowBackup(false);
+              };
+              if (!data.backupExecutor.name.trim() && !data.backupExecutor.address.trim()) {
+                clear();
+                return;
+              }
+              confirmDestructive(
+                `Remove ${data.backupExecutor.name.trim() || 'the backup executor'} as an executor?`,
+                'Remove',
+                clear,
+              );
+            }}
+          >
+            <Text style={styles.removeLinkText}>Remove this executor</Text>
+          </TouchableOpacity>
+        </>
       ) : (
         <TouchableOpacity
           style={[shared.addBtn, { marginTop: 8 }]}
@@ -127,3 +209,43 @@ export default function Executors({ data, onChange, onNext, onBack }: Props) {
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  roleOption: {
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 8,
+    backgroundColor: C.surface,
+  },
+  roleOptionActive: {
+    borderColor: C.primary,
+    backgroundColor: '#EEF3FA',
+  },
+  roleTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.text,
+  },
+  roleTitleActive: {
+    color: C.primary,
+  },
+  roleDetail: {
+    fontSize: 13,
+    color: C.textLight,
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  removeLink: {
+    alignSelf: 'flex-end',
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    marginBottom: 4,
+  },
+  removeLinkText: {
+    color: C.danger,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});

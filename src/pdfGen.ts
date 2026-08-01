@@ -78,7 +78,25 @@ function giftLetter(i: number): string {
 }
 
 function wrapParagraph(text: string, font: PDFFont, size: number, maxW: number): string[] {
-  const words = text.split(' ');
+  // A single token wider than the column is hard-broken by characters rather
+  // than drawn past the page edge. Off-page text is not clipped on screen only —
+  // it is absent from the printed sheet, and in this document absent text can
+  // be operative words.
+  const words = text.split(' ').flatMap(word => {
+    if (font.widthOfTextAtSize(word, size) <= maxW) return [word];
+    const pieces: string[] = [];
+    let piece = '';
+    for (const ch of word) {
+      if (piece && font.widthOfTextAtSize(piece + ch, size) > maxW) {
+        pieces.push(piece);
+        piece = ch;
+      } else {
+        piece += ch;
+      }
+    }
+    if (piece) pieces.push(piece);
+    return pieces;
+  });
   const lines: string[] = [];
   let line = '';
   for (const word of words) {
@@ -193,6 +211,14 @@ function substitutionClause(b: Beneficiary): string {
   const name = field(b.name, 'beneficiary name missing');
   const namePoss = `${name}'s`;
 
+  // The event that takes this beneficiary out of the gift. A person fails to
+  // survive; a charity ceases to exist or amalgamates. Writing family
+  // survivorship onto an organisation produced operative words about a
+  // company's "children" — wrong kind of recipient, wrong kind of failure.
+  const trigger = b.isCharity
+    ? `If ${name} (${pct}) shall have ceased to exist or amalgamated with another charity or body at my death`
+    : `If ${name} (${pct}) shall fail to survive me by 30 days`;
+
   /**
    * Words disapplying Wills Act 1837 s.33, for a gift to the testator's own
    * child where the substitution chosen is not per stirpes.
@@ -226,13 +252,19 @@ function substitutionClause(b: Beneficiary): string {
       `gift, so that ${namePoss} children shall not take ${namePoss} share in ${namePoss} place.`
     : '';
 
+  // Both limbs are keyed to the same 30-day window as the gift itself. The old
+  // words used "children then living" (then = when?) and keyed the grandchild
+  // limb to predeceasing the BENEFICIARY — so a child who outlived the
+  // beneficiary but died before the testator, or inside the 30 days, was in
+  // neither limb and their branch silently lapsed.
   if (sub.type === 'per-stirpes') {
     return (
-      `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
-      `in equal shares to ${namePoss} children then living; if any such child has predeceased ${name} ` +
-      `leaving children of their own, those grandchildren shall take their parent's share equally ` +
-      `(per stirpes); and if ${name} leaves no children or issue surviving me, ${namePoss} share shall ` +
-      `be divided among the other surviving residuary beneficiaries in proportion to their respective shares.`
+      `${trigger}, ${namePoss} share shall pass in equal shares to such of ${namePoss} children ` +
+      `as shall survive me by 30 days; if any child of ${name} shall have died in my lifetime or ` +
+      `failed to survive me by 30 days, leaving children of their own living at my death, those ` +
+      `grandchildren shall take their parent's share equally between them (per stirpes); and if no ` +
+      `child or issue of ${name} shall so survive me, ${namePoss} share shall be divided among the ` +
+      `other surviving residuary beneficiaries in proportion to their respective shares.`
     );
   }
 
@@ -254,23 +286,25 @@ function substitutionClause(b: Beneficiary): string {
    * other in the same sentence.
    */
   if (sub.type === 'own-children') {
+    // The grandchild limb keys to "died in my lifetime or failed to survive me
+    // by 30 days" — not "predeceased me" — so a child who survives the testator
+    // but dies inside the 30-day window still passes their share down to their
+    // own children rather than having it redistribute sideways.
     return (
-      `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
-      `in equal shares to such of my children as shall survive me by 30 days; and if any child of ` +
-      `mine shall have predeceased me leaving children living at my death, those grandchildren shall ` +
-      `take equally between them the share their parent would have taken (per stirpes); and if no ` +
-      `child or issue of mine shall so survive me, ${namePoss} share shall be divided among the ` +
-      `other surviving residuary beneficiaries in proportion to their respective shares.`
+      `${trigger}, ${namePoss} share shall pass in equal shares to such of my children as shall ` +
+      `survive me by 30 days; and if any child of mine shall have died in my lifetime or failed to ` +
+      `survive me by 30 days, leaving children living at my death, those grandchildren shall take ` +
+      `equally between them the share their parent would have taken (per stirpes); and if no child ` +
+      `or issue of mine shall so survive me, ${namePoss} share shall be divided among the other ` +
+      `surviving residuary beneficiaries in proportion to their respective shares.`
     );
   }
 
   /**
    * To people the testator names, in shares of this beneficiary's share.
    *
-   * One substitute keeps the wording it has always had — "shall pass to X
-   * absolutely" — because there is nothing to apportion between, and a draft
-   * saved under the old single-name field migrates to exactly this case. An old
-   * will regenerated after the update reads word for word as it did before.
+   * One substitute takes the whole share, so nothing is apportioned; a draft
+   * saved under the old single-name field migrates to exactly this case.
    *
    * Two or more are apportioned with "as to N% thereof". "Thereof" is doing the
    * only job that matters in the sentence: it fixes the percentage to the share
@@ -283,8 +317,16 @@ function substitutionClause(b: Beneficiary): string {
    * lapses: it is not caught by the gift over to the other, because there is no
    * gift over, and it falls into partial intestacy while the rest of the will
    * works fine. Sending it to the survivors of them keeps it inside the
-   * provision the testator actually made, and the ultimate-gift clause below
-   * catches the case where none of them survives.
+   * provision the testator actually made.
+   *
+   * Every branch then closes its own gap: if NO substitute survives, the share
+   * goes to the other surviving residuary beneficiaries. The ultimate clause
+   * below cannot be relied on for this — it used to be conditioned on the WHOLE
+   * estate failing, so one surviving beneficiary elsewhere blocked it while
+   * this branch's share fell into intestacy. Substitutes also take on the same
+   * 30-day condition as every other taker in the scheme: without it, a
+   * substitute who outlived the testator by a day took absolutely and the share
+   * passed through the substitute's own estate.
    */
   if (sub.type === 'named') {
     const subs = sub.substitutes.length > 0 ? sub.substitutes : [{ id: '', name: '', share: '' }];
@@ -292,8 +334,9 @@ function substitutionClause(b: Beneficiary): string {
     if (subs.length === 1) {
       const named = field(subs[0].name, 'substitute name missing');
       return (
-        `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
-        `to ${named} absolutely.${s33}`
+        `${trigger}, ${namePoss} share shall pass to ${named}, provided that ${named} survives me ` +
+        `by 30 days; and if ${named} shall not so survive me, that share shall be divided among ` +
+        `the other surviving residuary beneficiaries in proportion to their respective shares.${s33}`
       );
     }
 
@@ -301,10 +344,12 @@ function substitutionClause(b: Beneficiary): string {
       .map(s => `as to ${pctLabel(s.share)} thereof to ${field(s.name, 'substitute name missing')}`)
       .join(', and ');
     return (
-      `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall pass ` +
-      `${apportioned}, absolutely. If any of them shall fail to survive me by 30 days, that ` +
+      `${trigger}, ${namePoss} share shall pass ${apportioned}, provided in each case that the ` +
+      `substitute survives me by 30 days. If any of them shall fail to survive me by 30 days, that ` +
       `person's part shall pass to such of the others of them as shall so survive me, in ` +
-      `proportion to their respective parts.${s33}`
+      `proportion to their respective parts; and if none of them shall so survive me, ${namePoss} ` +
+      `share shall be divided among the other surviving residuary beneficiaries in proportion to ` +
+      `their respective shares.${s33}`
     );
   }
 
@@ -312,8 +357,8 @@ function substitutionClause(b: Beneficiary): string {
   // current shares was dropped — it duplicated the provision in looser language
   // and had no place in the operative part of a will.
   return (
-    `If ${name} (${pct}) shall fail to survive me by 30 days, ${namePoss} share shall be ` +
-    `divided among the other surviving residuary beneficiaries in proportion to their respective shares.${s33}`
+    `${trigger}, ${namePoss} share shall be divided among the other surviving residuary ` +
+    `beneficiaries in proportion to their respective shares.${s33}`
   );
 }
 
@@ -439,6 +484,19 @@ export async function generateWillPdf(
     ', hereby revoke all former Wills and ' +
     'codicils previously made by me and declare this to be my last Will.',
     { size: 11 });
+
+  // Wills Act 1837 s.18(3) / s.18B(3): marriage or civil partnership revokes a
+  // will UNLESS it was made in expectation of that particular marriage and says
+  // it is to survive it. The person must be named — an expectation of marrying
+  // "whoever" does not engage the saving.
+  if (data.expectingMarriage && data.intendedSpouseName.trim()) {
+    const intended = sanitizeForPdf(data.intendedSpouseName).trim();
+    ctx = gap(ctx, 4);
+    ctx = drawText(ctx,
+      `I make this Will in expectation of my forthcoming marriage to, or civil partnership with, ` +
+      `${intended}, and I intend that this Will shall not be revoked by that marriage or civil partnership.`,
+      { size: 11 });
+  }
   ctx = gap(ctx, 14);
 
   // ── 2. Declaration as to family (conditional) ──────────────────────────────
@@ -474,12 +532,29 @@ export async function generateWillPdf(
     { size: 11 });
 
   if (exec2.name.trim()) {
+    // The clause used to read "jointly with or as a substitute for the above" —
+    // both at once, which is a construction dispute at probate. The role now
+    // comes from an explicit answer; a draft saved before the question existed
+    // renders a marker rather than a guess.
+    const exec2Named = field(exec2.name, 'second executor name missing') +
+      (exec2.address.trim() ? ' of ' + inlineAddress(exec2.address) : '');
+    const exec1Name = field(exec1.name, 'primary executor name missing');
     ctx = gap(ctx, 4);
-    ctx = drawText(ctx,
-      `I also appoint ${field(exec2.name, 'second executor name missing')}` +
-      `${exec2.address.trim() ? ' of ' + inlineAddress(exec2.address) : ''} ` +
-      `to be Executor jointly with or as a substitute for the above.`,
-      { size: 11 });
+    if (data.secondaryExecutorRole === 'joint') {
+      ctx = drawText(ctx,
+        `I also appoint ${exec2Named} to be Executor of this my Will jointly with the said ${exec1Name}.`,
+        { size: 11 });
+    } else if (data.secondaryExecutorRole === 'substitute') {
+      ctx = drawText(ctx,
+        `In the event that the said ${exec1Name} is unable or unwilling to act, I appoint ` +
+        `${exec2Named} to be Executor of this my Will in their place.`,
+        { size: 11 });
+    } else {
+      ctx = drawText(ctx,
+        `I also appoint ${exec2Named} to be Executor ` +
+        `[JOINTLY WITH OR AS A SUBSTITUTE FOR THE FIRST EXECUTOR — NOT YET CHOSEN].`,
+        { size: 11 });
+    }
   }
 
   if (backupExec.name.trim()) {
@@ -602,14 +677,20 @@ export async function generateWillPdf(
       // or amalgamates, so the trigger has to be worded for the right kind of
       // recipient or the clause never bites.
       const failTrigger = gift.isCharity
-        ? `If ${recipient} shall have ceased to exist or amalgamated with another charity at my death`
+        ? `If ${recipient} shall have ceased to exist or amalgamated with another charity or body at my death`
         : `If ${recipient} shall fail to survive me by 30 days`;
 
       let failClause: string;
       if (gift.substitutionType === 'named') {
+        // The substitute takes on the same 30-day condition as every other
+        // taker, and the gift has somewhere to go if the substitute has also
+        // died — without that limb it lapsed into residue by silence rather
+        // than by words.
+        const sub = field(gift.substitutionRecipient, 'alternative recipient name missing');
         failClause =
-          `${failTrigger}, this gift shall pass to ` +
-          `${field(gift.substitutionRecipient, 'alternative recipient name missing')} absolutely.`;
+          `${failTrigger}, this gift shall pass to ${sub}, provided that ${sub} survives me by ` +
+          `30 days; and if ${sub} shall not so survive me, this gift shall fall into and form ` +
+          `part of my residuary estate.`;
       } else {
         failClause = `${failTrigger}, this gift shall fall into and form part of my residuary estate.`;
       }
@@ -692,10 +773,14 @@ export async function generateWillPdf(
   }
 
   for (const b of data.beneficiaries) {
+    // A charity is labelled as one, and never gets the minor-trust suffix —
+    // an organisation cannot be under 18, and printing trust machinery against
+    // it would be a defect on the face of the will.
     ctx = drawText(ctx,
       `• ${field(b.name, 'beneficiary name missing')}` +
-      `${b.relationship.trim() ? ' (' + sanitizeForPdf(b.relationship).trim() + ')' : ''} — ${pctLabel(b.percentage)}` +
-      `${b.isMinor ? ' (held on trust until age 18)' : ''}`,
+      `${b.isCharity ? ' (a registered charity)' : b.relationship.trim() ? ' (' + sanitizeForPdf(b.relationship).trim() + ')' : ''}` +
+      ` — ${pctLabel(b.percentage)}` +
+      `${!b.isCharity && b.isMinor ? ' (held on trust until age 18)' : ''}`,
       { size: 11, indent: 16 });
   }
 
@@ -724,21 +809,28 @@ export async function generateWillPdf(
   }
 
   // ── Ultimate backstop ─────────────────────────────────────────────────────
+  // A sweep-up, not a whole-estate condition. The old words — "If no residuary
+  // beneficiary or their substituted beneficiary shall survive me..." — could
+  // not fire while ANY beneficiary survived, so a single branch whose takers
+  // had all died fell into intestacy from a will that read complete. "If and
+  // so far as" catches any part left undisposed of, however it got there.
   ctx = gap(ctx, 4);
   if (data.ultimateBackstop.trim()) {
     ctx = drawText(ctx,
-      `If no residuary beneficiary or their substituted beneficiary shall survive me by 30 days, ` +
-      `my residuary estate shall pass to ${sanitizeForPdf(data.ultimateBackstop).trim()} absolutely.`,
+      `If and so far as any part of my residuary estate is not effectively disposed of by the ` +
+      `foregoing provisions of this clause, that part shall pass to ` +
+      `${sanitizeForPdf(data.ultimateBackstop).trim()} absolutely.`,
       { size: 11 });
   } else {
     ctx = drawText(ctx,
-      `If no residuary beneficiary or their substituted beneficiary shall survive me by 30 days, ` +
-      `my residuary estate shall pass in accordance with the laws of intestacy as if I had died without a Will.`,
+      `If and so far as any part of my residuary estate is not effectively disposed of by the ` +
+      `foregoing provisions of this clause, that part shall pass in accordance with the laws of ` +
+      `intestacy as if I had died without a Will.`,
       { size: 11 });
   }
 
   // ── Trusts for minor beneficiaries ────────────────────────────────────────
-  const minorBens = data.beneficiaries.filter(b => b.isMinor);
+  const minorBens = data.beneficiaries.filter(b => b.isMinor && !b.isCharity);
   if (minorBens.length > 0) {
     ctx = gap(ctx, 10);
     ctx = drawText(ctx, 'TRUSTS FOR MINOR BENEFICIARIES', { font: bold, size: 10 });
@@ -765,9 +857,14 @@ export async function generateWillPdf(
       `transferred to such beneficiary absolutely.`,
       { size: 11, indent: 16 });
     ctx = gap(ctx, 4);
+    // The substitution provisions are all conditioned on failing to survive by
+    // 30 days; a minor who survives the 30 days and then dies at, say, ten is
+    // outside their literal words. "As if" bridges the two so the machinery
+    // this clause points at can actually operate.
     ctx = drawText(ctx,
-      `(d) If such beneficiary dies before attaining the age of 18, their share shall pass in accordance ` +
-      `with the substitution provisions set out above.`,
+      `(d) If such beneficiary dies before attaining the age of 18, their share shall pass as if that ` +
+      `beneficiary had failed to survive me by 30 days, in accordance with the substitution provisions ` +
+      `set out above.`,
       { size: 11, indent: 16 });
   }
 
@@ -886,11 +983,15 @@ export async function generateWillPdf(
 
   ctx = sigBlock(ctx, 'TESTATOR', ['Signature']);
   ctx = gap(ctx, 12);
-  ctx = sigBlock(ctx, 'WITNESS 1 (must not be a beneficiary or spouse of a beneficiary)', [
+  // s.15 Wills Act 1837, as extended by the Civil Partnership Act 2004: a gift
+  // is void where the witness is a beneficiary, or a beneficiary's spouse OR
+  // civil partner. The label at the signature line is the one that gets read
+  // on the day, so it has to carry the full rule, not a paraphrase of it.
+  ctx = sigBlock(ctx, 'WITNESS 1 (must not be a beneficiary or the spouse or civil partner of a beneficiary)', [
     'Signature', 'Full name', 'Address', 'Occupation',
   ]);
   ctx = gap(ctx, 12);
-  ctx = sigBlock(ctx, 'WITNESS 2 (must not be a beneficiary or spouse of a beneficiary)', [
+  ctx = sigBlock(ctx, 'WITNESS 2 (must not be a beneficiary or the spouse or civil partner of a beneficiary)', [
     'Signature', 'Full name', 'Address', 'Occupation',
   ]);
 
@@ -1007,8 +1108,10 @@ export async function generateWillPdf(
       });
     }
     const footer = `${footerName ? footerName + ' — ' : ''}Last Will and Testament — Page ${index + 1} of ${pages.length}`;
+    // Clamped: a very long name makes the centring arithmetic go negative and
+    // the footer walks off the left edge of the page.
     p.drawText(footer, {
-      x: MARGIN + (CONTENT_W - regular.widthOfTextAtSize(footer, 8)) / 2,
+      x: Math.max(MARGIN, MARGIN + (CONTENT_W - regular.widthOfTextAtSize(footer, 8)) / 2),
       y: 42,
       size: 8,
       font: regular,

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { WillData, Guardian, GuardianRole } from '../types';
 import { C, shared } from './shared';
+import { confirmDestructive } from '../platform';
 
 interface Props {
   data: WillData;
@@ -44,7 +45,18 @@ export default function Guardians({ data, onChange, onNext, onBack }: Props) {
   }
 
   function removeGuardian(id: string) {
-    onChange({ guardians: data.guardians.filter(g => g.id !== id) });
+    const g = data.guardians.find(x => x.id === id);
+    const doRemove = () => onChange({ guardians: data.guardians.filter(x => x.id !== id) });
+    // A blank row is scaffolding, not a decision — no ceremony to remove it.
+    if (!g || (!g.name.trim() && !g.address.trim())) {
+      doRemove();
+      return;
+    }
+    confirmDestructive(
+      `Remove ${g.name.trim() || 'this guardian'} as a guardian for your children?`,
+      'Remove',
+      doRemove,
+    );
   }
 
   function renderGuardian(g: Guardian, i: number, label: string) {

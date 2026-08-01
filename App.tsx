@@ -17,6 +17,7 @@ import {
   loadStep,
   saveStep,
   flushWill,
+  onPersistFailure,
   listWills,
   createWill,
   deleteWill,
@@ -75,7 +76,12 @@ interface WizardProps {
 function Wizard({ id, onHome }: WizardProps) {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<WillData>(() => loadWillData(id));
-  const [step, setStep] = useState<number>(() => loadStep(id));
+  // Clamped on the way in: a stored step past Review — an older build with
+  // more steps, or a bad write — matches no screen at all, and the wizard
+  // renders a header over nothing.
+  const [step, setStep] = useState<number>(() =>
+    Math.min(STEP.review, Math.max(0, loadStep(id))),
+  );
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,6 +129,30 @@ function Wizard({ id, onHome }: WizardProps) {
 
   useEffect(() => () => {
     if (resetTimer.current) clearTimeout(resetTimer.current);
+  }, []);
+
+  // One failed background write is a blip. Three in a row means nothing has
+  // reached disk for a while, and the person typing their will deserves to
+  // know before they close the app. Said once per streak; a successful write
+  // re-arms it and clears the header's error state.
+  const persistWarned = useRef(false);
+  useEffect(() => {
+    onPersistFailure(consecutive => {
+      if (consecutive === 0) {
+        persistWarned.current = false;
+        setSaveState(prev => (prev === 'error' ? 'idle' : prev));
+        return;
+      }
+      if (consecutive >= 3 && !persistWarned.current) {
+        persistWarned.current = true;
+        setSaveState('error');
+        notify(
+          'Your answers are not being saved to this device — the last few attempts all failed. Check you have free storage space. Anything you type is only safe while the app stays open.',
+          'Not saving',
+        );
+      }
+    });
+    return () => onPersistFailure(null);
   }, []);
 
   // Autosave writes on every keystroke, but the last one before the app is

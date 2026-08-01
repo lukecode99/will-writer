@@ -27,6 +27,26 @@ interface Props {
   onRestart: () => void;
 }
 
+/**
+ * Raw enum values leak the codebase's naming onto the one screen that exists
+ * to be read back in plain English — "civilPartnership" is not what anyone
+ * selected. Unknown values fall through unchanged rather than to '' so that a
+ * corrupt store is still visible here instead of reading as "not set".
+ */
+const MARITAL_LABELS: Record<string, string> = {
+  single: 'Single',
+  married: 'Married',
+  civilPartnership: 'Civil partnership',
+  divorced: 'Divorced',
+  widowed: 'Widowed',
+};
+
+const BURIAL_LABELS: Record<string, string> = {
+  burial: 'Burial',
+  cremation: 'Cremation',
+  noPreference: 'No preference',
+};
+
 /** A share as the user should see it echoed back, including when it is unusable. */
 function shareLabel(raw: string): string {
   const value = parsePercentage(raw);
@@ -181,10 +201,15 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
       notify('There are still some things to fix before your will can be printed. They are listed at the top of this page.');
       return;
     }
+    // Honest about the state of the feature BEFORE doing anything. The old
+    // wording said "Sending to print service" and then generated the PDF, so
+    // the user reasonably believed a paper will was on its way — for a
+    // document whose whole value is the signed paper copy.
     notify(
       Platform.OS === 'web'
-        ? 'Sending to print service — downloading your PDF now.\n\n(Print dispatch will be wired in a future update.)'
-        : 'Sending to print service — opening your PDF now. Choose Print or Save to Files.\n\n(Print dispatch will be wired in a future update.)',
+        ? 'The print & post service is not available yet. We will download your PDF now so you can print and sign it yourself.'
+        : 'The print & post service is not available yet. We will open your PDF now — choose Print or Save to Files, then sign the paper copy.',
+      'Not available yet',
     );
     await handleGenerate();
   }
@@ -232,7 +257,10 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
         <Row label="Name" value={data.fullName} />
         <Row label="Address" value={data.address} />
         <Row label="Date of birth" value={data.dob} />
-        <Row label="Marital status" value={data.maritalStatus} />
+        <Row label="Marital status" value={MARITAL_LABELS[data.maritalStatus] ?? data.maritalStatus} />
+        {data.expectingMarriage && data.intendedSpouseName.trim() ? (
+          <Row label="Expecting to marry" value={data.intendedSpouseName.trim()} />
+        ) : null}
       </Section>
 
       <Section title="Partner & Children" stepKey="family" onEdit={onEdit}>
@@ -345,11 +373,31 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
       )}
 
       <Section title="Funeral Wishes" stepKey="funeral" onEdit={onEdit}>
-        {data.burialPreference ? <Row label="Preference" value={data.burialPreference} /> : null}
+        {data.burialPreference
+          ? <Row label="Preference" value={BURIAL_LABELS[data.burialPreference] ?? data.burialPreference} />
+          : null}
         {data.funeralWishes
           ? <Row label="Wishes" value={data.funeralWishes} />
           : <Text style={styles.empty}>No funeral wishes recorded</Text>}
       </Section>
+
+      {/* The signing rules used to live only in Home's collapsed guide, which
+          nobody re-opens on the way out. This is the last screen before a
+          document exists, so the two rules that can silently destroy it —
+          botched witnessing and a later marriage — are stated here, where the
+          person about to print is actually looking. */}
+      <View style={styles.signingPanel}>
+        <Text style={styles.signingTitle}>Before your will is legally valid</Text>
+        <Text style={styles.signingText}>
+          • Sign it in front of two adult witnesses, both present at the same time, who then sign
+          while you watch. Unwitnessed, it is just paper.{'\n'}
+          • A witness (or a witness's spouse or civil partner) who is left anything in this will
+          loses that gift — the will survives, their inheritance does not. Choose witnesses who
+          inherit nothing.{'\n'}
+          • Marrying or entering a civil partnership after signing cancels this will automatically,
+          unless it names the person you expect to marry. If that happens, make a new will.
+        </Text>
+      </View>
 
       <View style={styles.disclaimer}>
         <Text style={styles.disclaimerText}>
@@ -476,6 +524,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: C.textLight,
     marginTop: 2,
+  },
+  signingPanel: {
+    backgroundColor: '#EEF3FA',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#C7D5F0',
+  },
+  signingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E3A8A',
+    marginBottom: 6,
+  },
+  signingText: {
+    fontSize: 13,
+    color: '#1E3A8A',
+    lineHeight: 20,
   },
   disclaimer: {
     backgroundColor: '#FFF3CD',

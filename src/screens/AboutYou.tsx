@@ -64,8 +64,44 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
     }
 
     if (!data.maritalStatus) e.maritalStatus = 'Please select a marital status';
+
+    // s.18(3) Wills Act 1837: the saving only works for a PARTICULAR expected
+    // marriage, so saying yes without a name cannot go forward.
+    if (showExpectation && data.expectingMarriage) {
+      if (!data.intendedSpouseName.trim()) {
+        e.intendedSpouseName = other
+          ? 'Name the person they expect to marry. The law only preserves a will made in expectation of a particular marriage.'
+          : 'Name the person you expect to marry. The law only preserves a will made in expectation of a particular marriage.';
+      } else {
+        const bad = unprintableChars(data.intendedSpouseName);
+        if (bad.length > 0) e.intendedSpouseName = `We cannot print ${bad.join(' ')}. Please write the name using the Latin alphabet.`;
+      }
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
+  }
+
+  // Marriage revokes a will (s.18 Wills Act 1837), so anyone not already
+  // married or in a civil partnership is asked about a forthcoming one. For
+  // someone who IS married the question is meaningless, and a stale "yes"
+  // carried in the data must not go on blocking or printing a clause — the
+  // chip handler below clears it on the way in.
+  const showExpectation =
+    data.maritalStatus !== 'married' && data.maritalStatus !== 'civilPartnership';
+
+  // Errors are computed on Continue, but they used to also persist until the
+  // next Continue — the message sat there calling the corrected value wrong.
+  // Editing a field clears its own error at once; the full check still runs
+  // before moving on.
+  function edit(field: string, updates: Partial<WillData>) {
+    if (errors[field]) {
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+    onChange(updates);
   }
 
   return (
@@ -103,7 +139,7 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
         style={[shared.input, errors.fullName ? shared.inputError : null]}
         placeholder="e.g. John Robert Smith"
         value={data.fullName}
-        onChangeText={v => onChange({ fullName: v })}
+        onChangeText={v => edit('fullName', { fullName: v })}
         autoCapitalize="words"
       />
       {errors.fullName ? <Text style={shared.error}>{errors.fullName}</Text> : null}
@@ -113,7 +149,7 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
         style={[shared.input, shared.inputMulti, errors.address ? shared.inputError : null]}
         placeholder="Full address including postcode"
         value={data.address}
-        onChangeText={v => onChange({ address: v })}
+        onChangeText={v => edit('address', { address: v })}
         multiline
         numberOfLines={3}
       />
@@ -124,8 +160,8 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
         style={[shared.input, errors.dob ? shared.inputError : null]}
         placeholder="DD/MM/YYYY"
         value={data.dob}
-        onChangeText={v => onChange({ dob: formatUkDateInput(v) })}
-        keyboardType="numbers-and-punctuation"
+        onChangeText={v => edit('dob', { dob: formatUkDateInput(v) })}
+        keyboardType="number-pad"
       />
       {errors.dob ? <Text style={shared.error}>{errors.dob}</Text> : null}
 
@@ -135,7 +171,11 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
           <TouchableOpacity
             key={opt.value}
             style={[styles.chip, data.maritalStatus === opt.value ? styles.chipActive : null]}
-            onPress={() => onChange({ maritalStatus: opt.value })}
+            onPress={() =>
+              opt.value === 'married' || opt.value === 'civilPartnership'
+                ? edit('maritalStatus', { maritalStatus: opt.value, expectingMarriage: false, intendedSpouseName: '' })
+                : edit('maritalStatus', { maritalStatus: opt.value })
+            }
           >
             <Text style={[styles.chipText, data.maritalStatus === opt.value ? styles.chipTextActive : null]}>
               {opt.label}
@@ -144,6 +184,52 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
         ))}
       </View>
       {errors.maritalStatus ? <Text style={shared.error}>{errors.maritalStatus}</Text> : null}
+
+      {showExpectation ? (
+        <>
+          <Text style={shared.label}>
+            {other
+              ? 'Are they getting married or entering a civil partnership soon?'
+              : 'Are you getting married or entering a civil partnership soon?'}
+          </Text>
+          <Text style={styles.expectationHint}>
+            Marriage or civil partnership normally cancels a will automatically. If one is
+            planned, this will can be written so it survives — but only if it names the person.
+          </Text>
+          <View style={styles.chipRow}>
+            {[{ v: false, label: 'No' }, { v: true, label: 'Yes' }].map(opt => (
+              <TouchableOpacity
+                key={String(opt.v)}
+                style={[styles.chip, data.expectingMarriage === opt.v ? styles.chipActive : null]}
+                onPress={() =>
+                  opt.v
+                    ? onChange({ expectingMarriage: true })
+                    : edit('intendedSpouseName', { expectingMarriage: false, intendedSpouseName: '' })
+                }
+              >
+                <Text style={[styles.chipText, data.expectingMarriage === opt.v ? styles.chipTextActive : null]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {data.expectingMarriage ? (
+            <>
+              <Text style={shared.label}>
+                {other ? 'Full name of the person they expect to marry *' : 'Full name of the person you expect to marry *'}
+              </Text>
+              <TextInput
+                style={[shared.input, errors.intendedSpouseName ? shared.inputError : null]}
+                placeholder="e.g. Samantha Jane Carter"
+                value={data.intendedSpouseName}
+                onChangeText={v => edit('intendedSpouseName', { intendedSpouseName: v })}
+                autoCapitalize="words"
+              />
+              {errors.intendedSpouseName ? <Text style={shared.error}>{errors.intendedSpouseName}</Text> : null}
+            </>
+          ) : null}
+        </>
+      ) : null}
 
       <TouchableOpacity style={shared.primaryBtn} onPress={() => validate() && onNext()}>
         <Text style={shared.primaryBtnText}>Continue</Text>
@@ -177,6 +263,12 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 6,
+  },
+  expectationHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: C.textLight,
+    marginBottom: 8,
   },
   chip: {
     paddingHorizontal: 14,

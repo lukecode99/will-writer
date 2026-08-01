@@ -10,6 +10,20 @@ export interface Executor {
 }
 
 /**
+ * How a second executor acts, when one is named.
+ *
+ * 'joint'      — acts together with the first executor from the outset.
+ * 'substitute' — acts only if the first executor cannot or will not.
+ *
+ * The clause used to read "to be Executor jointly with or as a substitute for
+ * the above" — both at once, which is a construction dispute waiting for
+ * probate. The will has to say which; only the person making it knows.
+ * Empty is the state of every draft saved before the question existed, and it
+ * blocks finalisation rather than being guessed.
+ */
+export type SecondExecutorRole = 'joint' | 'substitute' | '';
+
+/**
  * Where a guardian sits in the appointment.
  *
  * 'primary'    — appointed on death, jointly with every other primary.
@@ -158,6 +172,19 @@ export interface Beneficiary {
   percentage: string;
   isOwnChild: boolean;
   isMinor: boolean;
+
+  /**
+   * Whether this residuary beneficiary is a charity or other organisation
+   * rather than a person.
+   *
+   * Without it the survivorship machinery wrote family law onto a company:
+   * "Cancer Research UK's share shall pass in equal shares to Cancer Research
+   * UK's children then living". A charity does not survive or predecease
+   * anyone — it ceases to exist or amalgamates — so every clause about this
+   * beneficiary has to be worded for the right kind of recipient.
+   */
+  isCharity: boolean;
+
   substitution: BeneficiarySubstitution;
 
   /**
@@ -235,6 +262,8 @@ export interface WillData {
 
   primaryExecutor: Executor;
   secondaryExecutor: Executor;
+  /** Required once a second executor is named — see SecondExecutorRole. */
+  secondaryExecutorRole: SecondExecutorRole;
   backupExecutor: Executor;
 
   guardians: Guardian[];
@@ -246,6 +275,19 @@ export interface WillData {
 
   funeralWishes: string;
   burialPreference: BurialPreference;
+
+  /**
+   * Made in expectation of marriage or civil partnership.
+   *
+   * Marriage or civil partnership REVOKES an existing will (Wills Act 1837
+   * s.18 / s.18B) — silently, in its entirety. The one escape is a will made
+   * in expectation of that particular marriage which says it is not to be
+   * revoked by it (s.18(3)). The expectation must be of marriage to a
+   * particular person, which is why the name is required when the answer is
+   * yes: "whoever I happen to marry" does not engage the saving.
+   */
+  expectingMarriage: boolean;
+  intendedSpouseName: string;
 }
 
 export const EMPTY_WILL: WillData = {
@@ -260,6 +302,7 @@ export const EMPTY_WILL: WillData = {
   childrenConfirmed: false,
   primaryExecutor: { name: '', address: '' },
   secondaryExecutor: { name: '', address: '' },
+  secondaryExecutorRole: '',
   backupExecutor: { name: '', address: '' },
   guardians: [],
   specificGifts: [],
@@ -267,4 +310,6 @@ export const EMPTY_WILL: WillData = {
   ultimateBackstop: '',
   funeralWishes: '',
   burialPreference: '',
+  expectingMarriage: false,
+  intendedSpouseName: '',
 };

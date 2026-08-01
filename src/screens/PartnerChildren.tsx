@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 
 import { WillData, Child } from '../types';
 import { dobError, parseUkDate, ageInYears, childrenSummary, formatUkDateInput } from '../family';
 import { shared, C } from './shared';
+import { confirmDestructive } from '../platform';
 
 interface Props {
   data: WillData;
@@ -74,10 +75,21 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
   }
 
   function removeChild(id: string) {
-    onChange({
+    const child = data.children.find(c => c.id === id);
+    const doRemove = () => onChange({
       children: data.children.filter(c => c.id !== id),
       childrenConfirmed: false,
     });
+    // A blank row is scaffolding, not a decision — no ceremony to remove it.
+    if (!child || (!child.name.trim() && !child.dob.trim())) {
+      doRemove();
+      return;
+    }
+    confirmDestructive(
+      `Remove ${child.name.trim() || 'this child'} from the list? Any share or gift already left to them stays in the will until you change it there.`,
+      'Remove',
+      doRemove,
+    );
   }
 
   return (
@@ -138,7 +150,7 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
             placeholder="DD/MM/YYYY"
             value={child.dob}
             onChangeText={v => updateChild(child.id, 'dob', formatUkDateInput(v))}
-            keyboardType="numbers-and-punctuation"
+            keyboardType="number-pad"
           />
           {dobProblems[i]
             ? <Text style={shared.error}>{dobProblems[i]}</Text>

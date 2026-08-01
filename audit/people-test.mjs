@@ -306,16 +306,22 @@ const messages = data => warnings(data).map(w => w.message).join(' | ');
 
   const unconfirmed = family();
   unconfirmed.childrenConfirmed = false;
-  const said = messages(unconfirmed);
-  check('an unconfirmed list is raised on review', said.includes('not confirmed that every one of your children is listed'));
-
-  // It has to be a warning. The will is not defective — an unanswered question
-  // is not a defect — and refusing to produce a finished document over a tick
-  // the user was never shown is the worse failure.
-  check('but it does not block the will', blockingProblems(unconfirmed).every(p => !p.message.includes('confirmed')));
+  const blocked = blockingProblems(unconfirmed).map(p => p.message).join(' | ');
+  // This used to be a warning, and a warning is read once and dismissed. A
+  // child left out of the declaration as to family is the most expensive
+  // omission this app can help someone make — an omitted child can apply to
+  // the court for provision, and the declaration is the document's own
+  // evidence of who was considered. So the unanswered question is part of the
+  // gate: the finished document waits until a person has said the list is
+  // complete.
+  check('an unconfirmed list blocks the will',
+    blocked.includes('not confirmed that every one of your children is listed'));
+  check('and says why it matters, not just that a box is unticked',
+    blocked.includes('apply to the court for provision'));
 
   check('a confirmed list is not raised at all',
-    !messages(family()).includes('confirmed that every one of your children'));
+    !messages(family()).includes('confirmed that every one of your children')
+      && blockingProblems(family()).every(p => !p.message.includes('confirmed')));
 
   // Different wording for the childless: "every one of your children is
   // listed" is nonsense when the answer is none, and a question that reads as
@@ -324,11 +330,11 @@ const messages = data => warnings(data).map(w => w.message).join(' | ');
   noKids.children = [];
   noKids.childrenConfirmed = false;
   noKids.beneficiaries = noKids.beneficiaries.filter(b => !b.isOwnChild);
-  const noKidsSaid = messages(noKids);
+  const noKidsBlocked = blockingProblems(noKids).map(p => p.message).join(' | ');
   check('someone with no children is asked whether that is right',
-    noKidsSaid.includes('have not listed any children, and have not confirmed that is right'));
+    noKidsBlocked.includes('not confirmed whether you have children'));
   check('and is not told a child might be missing from a list',
-    !noKidsSaid.includes('every one of your children is listed'));
+    !noKidsBlocked.includes('every one of your children is listed'));
 }
 
 // --- what a new share's substitute starts as ---------------------------------

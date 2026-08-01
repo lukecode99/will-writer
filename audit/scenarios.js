@@ -15,6 +15,7 @@ const EMPTY = {
   childrenConfirmed: true,
   primaryExecutor: { name: '', address: '' },
   secondaryExecutor: { name: '', address: '' },
+  secondaryExecutorRole: '',
   backupExecutor: { name: '', address: '' },
   guardians: [],
   specificGifts: [],
@@ -22,6 +23,8 @@ const EMPTY = {
   ultimateBackstop: '',
   funeralWishes: '',
   burialPreference: '',
+  expectingMarriage: false,
+  intendedSpouseName: '',
 };
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -34,6 +37,7 @@ function ben(id, name, relationship, percentage, opts = {}) {
     percentage,
     isOwnChild: opts.isOwnChild || false,
     isMinor: opts.isMinor || false,
+    isCharity: opts.isCharity || false,
     substitution: opts.substitution || { type: 'per-stirpes', substitutes: [] },
     // '' means the name was typed by hand, which is what every fixture written
     // before the picker existed was doing. Those keep being matched by name.
@@ -68,6 +72,9 @@ const baseline = {
   ],
   primaryExecutor: { name: 'Robert Hughes', address: '5 Elm Grove, Watford, WD17 1AB' },
   secondaryExecutor: { name: 'Sarah Hughes', address: '5 Elm Grove, Watford, WD17 1AB' },
+  // The role question blocks finalisation when a second executor is named, so
+  // every fixture derived from baseline answers it the way most couples do.
+  secondaryExecutorRole: 'substitute',
   backupExecutor: { name: '', address: '' },
   specificGifts: [gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar')],
   beneficiaries: [
@@ -813,6 +820,129 @@ const beneficiaryLinkOrphaned = {
   ],
 };
 
+// ------------------------------------------------------------------ round 6
+// Fixes from the 01-Aug-2026 regression audit. One fixture per fix, so each
+// stays locked.
+
+// Made in expectation of marriage (Wills Act 1837 s.18(3)). A single testator
+// about to marry: the saving clause must appear, naming the particular person,
+// or the marriage revokes the will the day it happens.
+const expectationOfMarriage = {
+  ...clone(baseline),
+  maritalStatus: 'single',
+  partnerName: 'Samantha Carter',
+  expectingMarriage: true,
+  intendedSpouseName: 'Samantha Carter',
+  beneficiaries: [
+    ben('b1', 'Samantha Carter', 'partner', '50'),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// Expecting marriage but to nobody named. "Whoever I marry" does not engage
+// s.18(3), so this must refuse rather than print a clause that will not work.
+const expectationUnnamed = { ...clone(expectationOfMarriage), intendedSpouseName: '' };
+
+// Date of birth left entirely blank. The age gate used to run only when
+// something was typed, so the one person who skipped the question skipped
+// the gate.
+const dobBlank = { ...clone(baseline), dob: '' };
+
+// Marital status never answered — no family declaration can be built.
+const maritalStatusMissing = { ...clone(baseline), maritalStatus: '' };
+
+// A charity taking half the residue. Every clause about it must be worded for
+// an organisation: ceased/amalgamated, no "children", no trust-until-18.
+const charityResiduary = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
+    ben('b2', 'Cancer Research UK', '', '50', {
+      isCharity: true,
+      substitution: { type: 'pro-rata', substitutes: [] },
+    }),
+  ],
+};
+
+// A charity with every person-shaped answer set on it: own child, under 18,
+// per-stirpes substitution. All three contradictions must block.
+const charityPersonAnswers = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
+    ben('b2', 'Cancer Research UK', '', '50', {
+      isCharity: true,
+      isOwnChild: true,
+      isMinor: true,
+      substitution: { type: 'per-stirpes', substitutes: [] },
+    }),
+  ],
+};
+
+// The second executor acting jointly from the outset.
+const executorRoleJoint = { ...clone(baseline), secondaryExecutorRole: 'joint' };
+
+// A second executor named but the joint-or-substitute question never answered
+// — the state of every draft saved before the question existed.
+const executorRoleMissing = { ...clone(baseline), secondaryExecutorRole: '' };
+
+// An address typed under an empty second-executor name. The clause is only
+// written when the name is filled in, so this executor silently vanished.
+const executorAddressNoName = {
+  ...clone(baseline),
+  secondaryExecutor: { name: '', address: '9 Birch Way, Pinner, HA5 3XX' },
+  secondaryExecutorRole: '',
+};
+
+// A guardian row started and never named, with minor children in the will.
+const guardianUnnamed = {
+  ...clone(minorsWithGuardians),
+  guardians: [
+    { id: 'gu1', name: 'Robert Hughes', address: '5 Elm Grove, Watford, WD17 1AB', role: 'primary' },
+    { id: 'gu2', name: '', address: '7 Oak Lane, Watford', role: 'primary' },
+  ],
+};
+
+// A child's date of birth that is not a date at all. Empty is allowed; a typo
+// is not — it silently dropped the identifying detail from the declaration.
+const childDobGarbage = clone(baseline);
+childDobGarbage.children[0].dob = '99/99/9999';
+
+// A specific gift whose fallback is the recipient themselves — a clause that
+// reads as complete and does nothing.
+const giftSubstituteSelf = {
+  ...clone(baseline),
+  specificGifts: [
+    gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar', {
+      substitutionType: 'named',
+      substitutionRecipient: 'Michael Doyle',
+    }),
+  ],
+};
+
+// A residuary substitute who is the beneficiary they stand behind.
+const residuarySelfSubstitute = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50', {
+      substitution: {
+        type: 'named',
+        substitutes: [{ id: 's1', name: 'Jane Elizabeth Smith', share: '' }],
+      },
+    }),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// A 185-character unbroken name. The renderer must break the token rather than
+// centre a line that starts 900 points off the left edge of the page.
+const longUnbrokenName = {
+  ...clone(baseline),
+  fullName: 'John ' + 'X'.repeat(180),
+};
+
 module.exports = {
   baseline,
   'child-name-differs-unlinked': childNameDiffersUnlinked,
@@ -883,4 +1013,20 @@ module.exports = {
   'substitutes-share-short': substitutesShareShort,
   'substitutes-blank-name': substitutesBlankName,
   'substitutes-are-my-children': substitutesAreMyChildren,
+
+  // round 6 — fixes from the 01-Aug-2026 regression audit
+  'expectation-of-marriage': expectationOfMarriage,
+  'expectation-of-marriage-unnamed': expectationUnnamed,
+  'dob-blank': dobBlank,
+  'marital-status-missing': maritalStatusMissing,
+  'charity-residuary': charityResiduary,
+  'charity-person-answers': charityPersonAnswers,
+  'executor-role-joint': executorRoleJoint,
+  'executor-role-missing': executorRoleMissing,
+  'executor-address-no-name': executorAddressNoName,
+  'guardian-unnamed': guardianUnnamed,
+  'child-dob-garbage': childDobGarbage,
+  'gift-substitute-self': giftSubstituteSelf,
+  'residuary-self-substitute': residuarySelfSubstitute,
+  'long-unbroken-name': longUnbrokenName,
 };

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
 import { WillData, SpecificGift, GiftSubstitutionType, GiftTaxBurden } from '../types';
 import { blockingProblems } from '../validation';
-import { notify } from '../platform';
+import { notify, confirmDestructive } from '../platform';
 import { C, shared } from './shared';
 
 interface Props {
@@ -59,7 +59,18 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
   }
 
   function removeGift(id: string) {
-    onChange({ specificGifts: data.specificGifts.filter(g => g.id !== id) });
+    const g = data.specificGifts.find(x => x.id === id);
+    const doRemove = () => onChange({ specificGifts: data.specificGifts.filter(x => x.id !== id) });
+    // A blank row is scaffolding, not a decision — no ceremony to remove it.
+    if (!g || (!g.description.trim() && !g.recipient.trim())) {
+      doRemove();
+      return;
+    }
+    confirmDestructive(
+      `Remove the gift of ${g.description.trim() || 'this item'}${g.recipient.trim() ? ` to ${g.recipient.trim()}` : ''}?`,
+      'Remove',
+      doRemove,
+    );
   }
 
   /**

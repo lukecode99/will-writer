@@ -4,7 +4,7 @@ import { WillData, Beneficiary, Substitute, SubstitutionType } from '../types';
 import { blockingProblems, minorFlagWarning, parsePercentage, percentageTotal } from '../validation';
 import { KnownPerson, defaultSubstitutionType, knownPeople, knownRefs } from '../people';
 import { C, shared } from './shared';
-import { notify } from '../platform';
+import { notify, confirmDestructive } from '../platform';
 
 interface Props {
   data: WillData;
@@ -69,9 +69,14 @@ function proRataResult(
 
 function previewText(b: Beneficiary, data: WillData): string {
   const allBens = data.beneficiaries;
-  const name = b.name || 'this person';
+  const name = b.name || (b.isCharity ? 'this charity' : 'this person');
   // Reads as "their 40% share" once a figure is entered, "their share" until then.
   const pct = b.percentage.trim() ? `${b.percentage.trim()}% ` : '';
+  // A charity does not die — the event its substitution waits for is it having
+  // ceased to exist, and the preview has to describe the event the will uses.
+  const gone = b.isCharity
+    ? `If ${name} no longer exists when you die`
+    : `If ${name} dies before you`;
   const sub = b.substitution;
   switch (sub.type) {
     case 'own-children':
@@ -89,9 +94,9 @@ function previewText(b: Beneficiary, data: WillData): string {
       return `If ${name} dies before you, their ${pct}share passes equally to ${name}'s own children — who may not be the same people as your children (per stirpes). If they have no children, the share is divided among the other surviving beneficiaries.`;
     case 'named': {
       const subs = sub.substitutes;
-      if (subs.length === 0) return `If ${name} dies before you, their ${pct}share passes to people you name — none added yet.`;
+      if (subs.length === 0) return `${gone}, their ${pct}share passes to people you name — none added yet.`;
       if (subs.length === 1) {
-        return `If ${name} dies before you, their ${pct}share passes to ${subs[0].name.trim() || '(name not yet entered)'}.`;
+        return `${gone}, their ${pct}share passes to ${subs[0].name.trim() || '(name not yet entered)'}. If they die before you too, it is divided among the other surviving beneficiaries.`;
       }
       // Read back as a share of the estate as well as of the share, because
       // that conversion is where the misunderstanding lives — "50%" typed under
@@ -105,15 +110,15 @@ function previewText(b: Beneficiary, data: WillData): string {
         const estatePart = ofEstate === null ? '' : ` = ${Number(((share / 100) * ofEstate).toFixed(2))}% of your estate`;
         return `${who} ${share}%${estatePart}`;
       });
-      return `If ${name} dies before you, their ${pct}share is divided between: ${parts.join('; ')}. If one of them dies before you too, their part goes to the others.`;
+      return `${gone}, their ${pct}share is divided between: ${parts.join('; ')}. If one of them dies before you too, their part goes to the others; if none survive, it is divided among the other surviving beneficiaries.`;
     }
     case 'pro-rata': {
       const others = proRataResult(allBens, b.id);
       if (others.length === 0) {
-        return `If ${name} dies before you, their ${pct}share would go to surviving co-beneficiaries — but there are none yet.`;
+        return `${gone}, their ${pct}share would go to surviving co-beneficiaries — but there are none yet.`;
       }
       const parts = others.map(o => `${o.name} (${o.pct.toFixed(1)}%)`).join(', ');
-      return `If ${name} dies before you, their ${pct}share is divided pro-rata among the other beneficiaries: ${parts}.`;
+      return `${gone}, their ${pct}share is divided pro-rata among the other beneficiaries: ${parts}.`;
     }
   }
 }
@@ -161,6 +166,16 @@ const BASE_OPTIONS: SubOption[] = [
  * appearing to have selected nothing. Validation is what objects to it.
  */
 function subOptions(b: Beneficiary, data: WillData): SubOption[] {
+  // A charity has no children and no issue: the family-based substitutions are
+  // meaningless for it, and validation refuses to draft them. Withheld here,
+  // except where a saved draft already chose one — that is shown so the screen
+  // reflects the will as it actually stands, and validation is what objects.
+  if (b.isCharity) {
+    const opts = BASE_OPTIONS.filter(o => o.value === 'named' || o.value === 'pro-rata');
+    if (b.substitution.type === 'per-stirpes') opts.unshift(BASE_OPTIONS[0]);
+    if (b.substitution.type === 'own-children') opts.unshift(OWN_CHILDREN_OPTION);
+    return opts;
+  }
   const eligible = data.children.length > 0 && !b.isOwnChild;
   if (eligible || b.substitution.type === 'own-children') {
     return [OWN_CHILDREN_OPTION, ...BASE_OPTIONS];
@@ -192,6 +207,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           percentage: '',
           isOwnChild: person ? person.isOwnChild : false,
           isMinor: false,
+          isCharity: false,
           substitution: {
             type: defaultSubstitutionType(person ? person.isOwnChild : false, data),
             substitutes: [],
@@ -208,7 +224,18 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
   }
 
   function removeBen(id: string) {
-    onChange({ beneficiaries: data.beneficiaries.filter(b => b.id !== id) });
+    const b = data.beneficiaries.find(x => x.id === id);
+    const doRemove = () => onChange({ beneficiaries: data.beneficiaries.filter(x => x.id !== id) });
+    // A blank row is scaffolding, not a decision — no ceremony to remove it.
+    if (!b || (!b.name.trim() && !b.percentage.trim())) {
+      doRemove();
+      return;
+    }
+    confirmDestructive(
+      `Remove ${b.name.trim() || 'this beneficiary'} from the residuary estate? Their share goes back into the unallocated total.`,
+      'Remove',
+      doRemove,
+    );
   }
 
   function setSubstitutes(b: Beneficiary, substitutes: Substitute[]) {
@@ -255,7 +282,18 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
   }
 
   function removeSub(b: Beneficiary, subId: string) {
-    setSubstitutes(b, evenShares(b.substitution.substitutes.filter(s => s.id !== subId)));
+    const s = b.substitution.substitutes.find(x => x.id === subId);
+    const doRemove = () =>
+      setSubstitutes(b, evenShares(b.substitution.substitutes.filter(x => x.id !== subId)));
+    if (!s || !s.name.trim()) {
+      doRemove();
+      return;
+    }
+    confirmDestructive(
+      `Remove ${s.name.trim()} as a substitute? The remaining substitutes reset to an equal split.`,
+      'Remove',
+      doRemove,
+    );
   }
 
   const total = percentageTotal(data);
@@ -360,33 +398,80 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
             <Text style={styles.errorText}>{pctError(b.percentage)}</Text>
           )}
 
-          {/* Locked when the beneficiary was picked from the family details,
-              because there it is a fact rather than an opinion. It drives the
-              s.33 warning below, and letting someone untick it for their own
-              child would switch that warning off for the one person it is
-              about. */}
-          <View style={styles.toggleRow}>
-            <Switch
-              value={b.isOwnChild}
-              onValueChange={v => updateBen(b.id, { isOwnChild: v })}
-              disabled={!!linked}
-              thumbColor={b.isOwnChild ? C.primary : '#ccc'}
-              trackColor={{ false: '#ddd', true: '#9BAFD1' }}
-            />
-            <Text style={styles.toggleLabel}>
-              This is my child{linked ? ' — from your family details' : ''}
-            </Text>
-          </View>
+          {/* Everything the will says about this beneficiary is worded for
+              either a person or an organisation, so this switch is asked
+              first. Turning it on clears the two person-only facts by
+              construction — a charity is nobody's child and has no age — and
+              moves a family-based substitution to pro-rata, visibly, in the
+              radio group below. Someone picked from the family details is a
+              person by definition, so the switch is locked for them. */}
+          {!linked ? (
+            <View style={styles.toggleRow}>
+              <Switch
+                value={b.isCharity}
+                onValueChange={v => updateBen(b.id, v
+                  ? {
+                      isCharity: true,
+                      isOwnChild: false,
+                      isMinor: false,
+                      ...(b.substitution.type === 'per-stirpes' || b.substitution.type === 'own-children'
+                        ? { substitution: { ...b.substitution, type: 'pro-rata' as SubstitutionType } }
+                        : {}),
+                    }
+                  : { isCharity: false })}
+                thumbColor={b.isCharity ? C.primary : '#ccc'}
+                trackColor={{ false: '#ddd', true: '#9BAFD1' }}
+              />
+              <Text style={styles.toggleLabel}>This is a charity or organisation</Text>
+            </View>
+          ) : null}
 
-          <View style={styles.toggleRow}>
-            <Switch
-              value={b.isMinor}
-              onValueChange={v => updateBen(b.id, { isMinor: v })}
-              thumbColor={b.isMinor ? C.primary : '#ccc'}
-              trackColor={{ false: '#ddd', true: '#9BAFD1' }}
-            />
-            <Text style={styles.toggleLabel}>This beneficiary is under 18</Text>
-          </View>
+          {b.isCharity ? (
+            <Text style={shared.hint}>
+              Use the charity's full registered name, and check it against the Charity Commission
+              register — a misnamed charity is a gift the executors have to go to court to interpret.
+            </Text>
+          ) : (
+            <>
+              {/* Locked when the beneficiary was picked from the family details,
+                  because there it is a fact rather than an opinion. It drives the
+                  s.33 warning below, and letting someone untick it for their own
+                  child would switch that warning off for the one person it is
+                  about. */}
+              <View style={styles.toggleRow}>
+                <Switch
+                  value={b.isOwnChild}
+                  onValueChange={v => updateBen(b.id, { isOwnChild: v })}
+                  disabled={!!linked}
+                  thumbColor={b.isOwnChild ? C.primary : '#ccc'}
+                  trackColor={{ false: '#ddd', true: '#9BAFD1' }}
+                />
+                <Text style={styles.toggleLabel}>
+                  This is my child{linked ? ' — from your family details' : ''}
+                </Text>
+              </View>
+
+              <View style={styles.toggleRow}>
+                <Switch
+                  value={b.isMinor}
+                  onValueChange={v => updateBen(b.id, { isMinor: v })}
+                  thumbColor={b.isMinor ? C.primary : '#ccc'}
+                  trackColor={{ false: '#ddd', true: '#9BAFD1' }}
+                />
+                <Text style={styles.toggleLabel}>This beneficiary is under 18</Text>
+              </View>
+
+              {/* The switch above quietly rewrites the gift as a trust, so its
+                  consequence is stated here, next to the hand that flipped it,
+                  not only in the document. */}
+              {b.isMinor ? (
+                <Text style={shared.hint}>
+                  Because they are under 18, their share will be held on trust by your executors until
+                  their 18th birthday — it cannot be paid to them directly before then.
+                </Text>
+              ) : null}
+            </>
+          )}
 
           {/* Said beside the switch as well as on Review. The switch is a quiet
               one — it rewrites the gift as a trust — and this is the only place
@@ -415,7 +500,11 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
             </View>
           )}
 
-          <Text style={[shared.label, { marginTop: 16 }]}>If {b.name || 'this person'} dies before you</Text>
+          <Text style={[shared.label, { marginTop: 16 }]}>
+            {b.isCharity
+              ? `If ${b.name || 'this charity'} no longer exists when you die`
+              : `If ${b.name || 'this person'} dies before you`}
+          </Text>
           <Text style={shared.hint}>Choose what happens to their share.</Text>
 
           <View style={styles.radioGroup}>

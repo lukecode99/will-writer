@@ -81,6 +81,7 @@ function namedFields(data: WillData): Array<{ step: StepKey; label: string; valu
     { step: 'executors', label: 'the backup executor address', value: data.backupExecutor.address },
     { step: 'residuary', label: 'the backstop wording', value: data.ultimateBackstop },
     { step: 'funeral', label: 'your funeral wishes', value: data.funeralWishes },
+    { step: 'about', label: 'the name of the person you expect to marry', value: data.intendedSpouseName },
   ];
   data.children.forEach(child => {
     fields.push({ step: 'family', label: `the name of your child "${child.name}"`, value: child.name });
@@ -124,24 +125,132 @@ export function blockingProblems(data: WillData): WillProblem[] {
 
   // Wills Act 1837 s.7 — a will made under 18 is invalid (outside the narrow
   // privileged-will exception for serving forces, which this app does not cover).
+  //
+  // An EMPTY date of birth blocks too. It used to pass silently — the check
+  // only ran when something was typed — which meant the age gate applied to
+  // everyone except the person who skipped the question, and the one field
+  // that separates the testator from a namesake was simply absent from the
+  // document. A draft resumed past the first screen, or left via a Review
+  // Edit link, arrived here with the field untouched.
   const dob = parseUkDate(data.dob);
-  if (data.dob.trim() && !dob) {
+  if (!data.dob.trim()) {
+    problems.push({
+      step: 'about',
+      message: 'Your date of birth is missing. It identifies you in the will and confirms you are old enough to make one.',
+    });
+  } else if (!dob) {
     problems.push({ step: 'about', message: 'Your date of birth is not a real date. Enter it as DD/MM/YYYY.' });
-  } else if (dob) {
-    if (dob.getTime() > todayUtc().getTime()) {
-      problems.push({ step: 'about', message: 'Your date of birth is in the future.' });
-    } else if (ageInYears(dob) < 18) {
-      problems.push({
-        step: 'about',
-        message: 'You must be 18 or over to make a will in England and Wales (Wills Act 1837, section 7).',
-      });
-    }
+  } else if (dob.getTime() > todayUtc().getTime()) {
+    problems.push({ step: 'about', message: 'Your date of birth is in the future.' });
+  } else if (ageInYears(dob) < 18) {
+    problems.push({
+      step: 'about',
+      message: 'You must be 18 or over to make a will in England and Wales (Wills Act 1837, section 7).',
+    });
+  } else if (ageInYears(dob) > 120) {
+    problems.push({ step: 'about', message: 'Your date of birth makes you more than 120 years old. Please check the year.' });
+  }
+
+  // The declaration as to family is built from this answer, and so is the
+  // disinherited-spouse warning below — with no status there is no family
+  // clause at all and the 1975 Act safety net cannot fire. It also decides
+  // whether a partner is recited as a spouse, a civil partner or not at all,
+  // which is not a blank the document can carry.
+  if (!data.maritalStatus) {
+    problems.push({ step: 'about', message: 'Your marital status is missing. The will has to state your family position.' });
+  }
+
+  // s.18(3) Wills Act 1837: a will survives a subsequent marriage only if it
+  // was made in expectation of marriage to a PARTICULAR person and says so.
+  // "Whoever I marry" does not engage the saving, so the name is required.
+  if (data.expectingMarriage && !data.intendedSpouseName.trim()) {
+    problems.push({
+      step: 'about',
+      message: 'You said this will is made in expectation of marriage, but did not name the person you expect to marry. The law only preserves a will made in expectation of a particular marriage.',
+    });
   }
 
   if (!data.primaryExecutor.name.trim()) {
     problems.push({
       step: 'executors',
       message: 'No executor is named. Someone has to be appointed to carry out the will.',
+    });
+  }
+
+  // An address with nobody at it. The clause is only written when the NAME is
+  // filled in, so an address typed under an empty name silently vanished from
+  // the document — an executor someone thought they had appointed.
+  if (!data.secondaryExecutor.name.trim() && data.secondaryExecutor.address.trim()) {
+    problems.push({
+      step: 'executors',
+      message: 'You gave an address for a second executor but no name. Add the name, or remove the address.',
+    });
+  }
+  if (!data.backupExecutor.name.trim() && data.backupExecutor.address.trim()) {
+    problems.push({
+      step: 'executors',
+      message: 'You gave an address for a backup executor but no name. Add the name, or remove the address.',
+    });
+  }
+
+  // Joint or substitute — the will has to say which. "Jointly with or as a
+  // substitute for the above" was both at once, which is a construction
+  // dispute at probate, decided when the one person who knew is dead.
+  if (data.secondaryExecutor.name.trim() && !data.secondaryExecutorRole) {
+    problems.push({
+      step: 'executors',
+      message: `Say whether ${data.secondaryExecutor.name.trim()} acts jointly with your first executor or only as a substitute. The will must state which.`,
+    });
+  }
+
+  // Both rules lived only on the Guardians screen's Continue button, which the
+  // Review Edit links and a resumed draft walk straight past. A blank name
+  // printed "[GUARDIAN NAME MISSING]" into a signable will; a substitute with
+  // no primary appointed nobody while reading as though it appointed someone.
+  const unnamedGuardians = data.guardians.filter(g => !g.name.trim()).length;
+  if (unnamedGuardians > 0) {
+    problems.push({
+      step: 'guardians',
+      message: unnamedGuardians === 1
+        ? 'One of your guardians has no name. Add it, or remove the row.'
+        : `${unnamedGuardians} of your guardians have no name. Add them, or remove the rows.`,
+    });
+  }
+  if (data.guardians.length > 0 && !data.guardians.some(g => g.role === 'primary')) {
+    problems.push({
+      step: 'guardians',
+      message: 'You named a substitute guardian but no first choice. A substitute only takes over from someone, so as it stands no guardian is appointed. Add a first-choice guardian, or remove the substitute.',
+    });
+  }
+
+  // A child's date of birth that is not a date. Empty is allowed — the
+  // declaration simply names the child without one — but "99/99/9999" is a
+  // typo, and the declaration was silently dropping the identifying detail
+  // the user believed they had provided.
+  data.children.forEach(child => {
+    const raw = (child.dob || '').trim();
+    if (!raw) return;
+    const parsed = parseUkDate(raw);
+    const who = child.name.trim() || 'one of your children';
+    if (!parsed) {
+      problems.push({ step: 'family', message: `The date of birth for ${who} is not a real date. Enter it as DD/MM/YYYY, or leave it blank.` });
+    } else if (parsed.getTime() > todayUtc().getTime()) {
+      problems.push({ step: 'family', message: `The date of birth for ${who} is in the future.` });
+    }
+  });
+
+  // The children question must actually have been answered. It was a warning,
+  // on the theory the Family screen could not be passed without it — but the
+  // Review Edit links and a resumed old draft both reach generation without
+  // ever crossing that screen's Continue button. A child left out of a will
+  // is the most expensive omission this app can help someone make, so the
+  // confirmation is part of the gate, not advice beside it.
+  if (!data.childrenConfirmed) {
+    problems.push({
+      step: 'family',
+      message: data.children.length === 0
+        ? 'You have not confirmed whether you have children. Go to Partner & Children and confirm the list is complete.'
+        : 'You have not confirmed that every one of your children is listed. Go to Partner & Children and confirm — a child left out can apply to the court for provision from your estate.',
     });
   }
 
@@ -234,6 +343,18 @@ export function blockingProblems(data: WillData): WillProblem[] {
             });
           }
 
+          // A substitute who is the beneficiary themselves: "if Alice fails to
+          // survive me, her share shall pass to Alice" disposes of nothing.
+          const selfSub = subs.some(
+            s => s.name.trim() && s.name.trim().toLowerCase() === b.name.trim().toLowerCase(),
+          );
+          if (selfSub) {
+            problems.push({
+              step: 'residuary',
+              message: `One of the substitutes for ${who} is ${who} themselves. A substitute only matters if ${who} has died — name someone else.`,
+            });
+          }
+
           // A single substitute takes the whole share, and the will says so
           // without apportioning anything, so the box is not shown and there is
           // nothing here to check.
@@ -270,6 +391,34 @@ export function blockingProblems(data: WillData): WillProblem[] {
         });
       }
 
+      // A charity is an organisation, and three of the person-shaped answers
+      // contradict that on the face of the document: it cannot be the
+      // testator's child, cannot be under 18, and has no children for a
+      // per-stirpes substitution to give the share to. Each combination
+      // would put family law onto a company in the operative words, so each
+      // is refused rather than drafted around.
+      if (b.isCharity) {
+        const who = b.name.trim() || 'a beneficiary';
+        if (b.isOwnChild) {
+          problems.push({
+            step: 'residuary',
+            message: `${who} is marked both as a charity and as your own child. One of those answers is wrong.`,
+          });
+        }
+        if (b.isMinor) {
+          problems.push({
+            step: 'residuary',
+            message: `${who} is marked both as a charity and as under 18. One of those answers is wrong.`,
+          });
+        }
+        if (b.substitution.type === 'per-stirpes') {
+          problems.push({
+            step: 'residuary',
+            message: `${who} is a charity, so its share cannot pass to "their children" if it ceases to exist. Choose where the share goes instead — a named substitute, the other beneficiaries, or your own children.`,
+          });
+        }
+      }
+
       // The one combination that would contradict itself in a single sentence.
       // For a gift to your own child the clause says a predeceased child's
       // children take per stirpes, while section 33 has to be disapplied to
@@ -295,6 +444,18 @@ export function blockingProblems(data: WillData): WillProblem[] {
       problems.push({
         step: 'gifts',
         message: `You chose a named substitute for the gift to ${gift.recipient.trim() || 'a recipient'} but did not say who.`,
+      });
+    }
+    // "If Rita fails to survive me, this gift shall pass to Rita" — a clause
+    // that reads as complete and does nothing at all.
+    if (
+      gift.substitutionType === 'named' &&
+      gift.substitutionRecipient.trim() &&
+      gift.substitutionRecipient.trim().toLowerCase() === gift.recipient.trim().toLowerCase()
+    ) {
+      problems.push({
+        step: 'gifts',
+        message: `The substitute for the gift to ${gift.recipient.trim()} is the same person as the recipient. Name someone else, or let the gift fall into your residuary estate.`,
       });
     }
   });
@@ -394,15 +555,8 @@ export function warnings(data: WillData): WillProblem[] {
     });
   }
 
-  // A guardian appointment that appoints nobody. The document still reads as
-  // complete, so it has to be said out loud on Review rather than left to be
-  // discovered when it is relied on.
-  if (hasMinorChildren(data) && data.guardians.length > 0 && !data.guardians.some(g => g.role === 'primary')) {
-    out.push({
-      step: 'guardians',
-      message: 'You named a substitute guardian but no first choice. A substitute only takes over from someone, so as it stands no guardian is appointed.',
-    });
-  }
+  // A substitute guardian with no first choice now BLOCKS generation — see
+  // blockingProblems. Nothing to warn about here that the gate does not say.
 
   // The "this beneficiary is under 18" switch, checked against what the rest of
   // the will already says about the same person.
@@ -511,23 +665,9 @@ export function warnings(data: WillData): WillProblem[] {
     });
   }
 
-  // The Family step will not let anyone past without confirming the list of
-  // children is complete, so this should be unreachable by anyone filling the
-  // will in from the start.
-  //
-  // It is here for the drafts that were saved before the question existed. They
-  // reopen unconfirmed, at whatever step they were left on, which may be well
-  // past this one — and the person resuming has no reason to walk backwards
-  // through steps they already finished. Review is the one screen they are
-  // guaranteed to see.
-  if (!data.childrenConfirmed) {
-    out.push({
-      step: 'family',
-      message: data.children.length === 0
-        ? 'You have not listed any children, and have not confirmed that is right. Go back to Partner & Children and check.'
-        : 'You have not confirmed that every one of your children is listed. Go back to Partner & Children and check — a child left out can apply to the court for provision from your estate.',
-    });
-  }
+  // An unconfirmed children list now BLOCKS generation — see blockingProblems.
+  // The old warning assumed the Family screen's Continue button was the only
+  // route forward; the Review Edit links proved otherwise.
 
   // A child who exists on one screen and not the other.
   //
