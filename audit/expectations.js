@@ -731,6 +731,48 @@ const RAW = {
     mustNotContain: ['DRAFT — DO NOT SIGN'],
     check: all(noMarkers, advisoryDoesNotMention('not left anything in this will')),
   },
+
+  /**
+   * A child who exists on the residuary screen and not on the family one.
+   *
+   * Warned rather than refused, and deliberately not repaired on the user's
+   * behalf: copying the beneficiary into the family details would invent a
+   * child out of a switch, and clearing the switch would disinherit one.
+   *
+   * The guardian sentence is asserted separately from the list sentence. A
+   * warning that named the missing list but not the consequence would satisfy a
+   * single loose assertion while saying nothing about the half that cannot be
+   * put right afterwards — `hasMinorChildren` reads `data.children` and nothing
+   * else, so an empty list means the guardians step never appears and the
+   * existing no-guardian warning cannot fire either.
+   */
+  'child-only-on-residuary': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      advisoryMentions('marked as your child on the residuary step'),
+      advisoryMentions('no guardian has been appointed and you have not been asked for one'),
+    ),
+  },
+
+  /**
+   * A child row started and not finished. Refused, because the alternative is a
+   * signable will with a gap marker in the middle of a sentence.
+   *
+   * `noMarkers` cannot catch this one: it only inspects documents the app
+   * agreed to finalise, and the entire defect was that this one was finalised.
+   * The mutation check is what pins it — remove the guard and the verdict turns
+   * 'ok', at which point noMarkers fires on [CHILD NAME MISSING].
+   */
+  'child-row-unfinished': {
+    verdict: 'REFUSED',
+    problemsMention: ['has no name'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+    // The rest of the list still reads back correctly in the draft preview,
+    // which is how someone finds the row they left blank.
+    check: documentSays('Oliver Smith (born 1 June 2004)', 'Amelia Smith (born 12 September 2006)'),
+  },
 };
 
 // Attach the common invariants to every scenario.

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
-import { WillData, Beneficiary } from '../types';
+import { WillData, Beneficiary, SubstitutionType } from '../types';
 import { hasMinorChildren } from '../family';
 import { C, shared } from './shared';
 import { notify, deliverPdf } from '../platform';
@@ -185,8 +185,23 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
     await handleGenerate();
   }
 
-  const subTypeLabel = (type: string) =>
-    type === 'per-stirpes' ? 'Children (per stirpes)' : type === 'named' ? 'Named person' : 'Pro-rata among survivors';
+  // A switch rather than a ternary chain, so that adding a fifth substitution
+  // type is a compile error here instead of silently labelling itself
+  // "Pro-rata among survivors" — which is exactly what the chain did to
+  // 'own-children' the moment it was added, because it was typed `string` and
+  // the final `:` swallows everything it does not recognise. The row below it
+  // described the provision correctly at the same time, so this screen read
+  // "Pro-rata among survivors → Your own children inherit equally": a review
+  // screen contradicting itself about where the estate goes, on the one screen
+  // whose whole job is to be read back before signing.
+  const subTypeLabel = (type: SubstitutionType): string => {
+    switch (type) {
+      case 'per-stirpes': return "Beneficiary's children (per stirpes)";
+      case 'named': return 'Named person';
+      case 'pro-rata': return 'Pro-rata among survivors';
+      case 'own-children': return 'Your own children';
+    }
+  };
 
   return (
     <ScrollView contentContainerStyle={shared.scrollContent}>

@@ -448,6 +448,46 @@ const ownChildrenOnOwnChild = {
   ],
 };
 
+// -------------------------------------- a child on one screen and not the other
+//
+// "I confirm I have no children" on the Family step, and then a beneficiary
+// flagged as your own child on the Residuary step. Nothing compared the two.
+//
+// The share itself works, which is why this warns rather than refuses. What does
+// not work is the guardian: `hasMinorChildren` reads `data.children` and nothing
+// else, so an empty family list means the guardians step never appears, no
+// appointment is asked for, and the existing "you have children under 18 and
+// have not appointed a guardian" warning cannot fire either — the one omission
+// in a will that cannot be argued about afterwards, because by then the person
+// who knew the answer is dead and the court decides instead.
+const childOnlyOnResiduary = {
+  ...clone(baseline),
+  children: [],
+  guardians: [],
+  specificGifts: [],
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50'),
+    ben('b2', 'Oliver Smith', 'son', '50', { isOwnChild: true, isMinor: true }),
+  ],
+};
+
+// ------------------------------------------------- a child row left unfinished
+//
+// A row someone started and did not finish — the likeliest way of all to arrive
+// at a gap marker. The declaration as to family prints every child by name, and
+// a blank one used to be finalised as "namely Oliver Smith (born 1 June 2004),
+// Amelia Smith (born 12 September 2006), [CHILD NAME MISSING]": a signable will
+// with a gap marker mid-sentence, produced without a word of complaint. Every
+// other gap marker in this document is blocked before finalisation.
+const childRowUnfinished = {
+  ...clone(baseline),
+  children: [
+    { id: 'c1', name: 'Oliver Smith', dob: '01/06/2004' },
+    { id: 'c2', name: 'Amelia Smith', dob: '12/09/2006' },
+    { id: 'c3', name: '   ', dob: '' },
+  ],
+};
+
 // ------------------------------------------ named substitutes are a provision
 //
 // Neither child takes anything directly. Oliver is the named substitute for the
@@ -691,4 +731,8 @@ module.exports = {
   'own-children-no-children': ownChildrenNoChildren,
   'own-children-on-own-child': ownChildrenOnOwnChild,
   'named-substitutes': namedSubstitutes,
+
+  // round 4 — the two the round-3 pass did not reach
+  'child-only-on-residuary': childOnlyOnResiduary,
+  'child-row-unfinished': childRowUnfinished,
 };

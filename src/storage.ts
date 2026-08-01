@@ -54,6 +54,35 @@ function newId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+const SUBSTITUTION_TYPES: SubstitutionType[] = ['per-stirpes', 'named', 'pro-rata', 'own-children'];
+
+/**
+ * A substitution type this build does not recognise falls back to per stirpes.
+ *
+ * Adding a fourth substitution type made this reachable for the first time.
+ * Wills are saved by one version of the app and reopened by another, and the
+ * traffic runs both ways: a will written on a phone that has updated gets
+ * opened on one that has not, and old builds stay installed for a long time.
+ *
+ * The unknown string used to be stored as-is and handed to the clause switch,
+ * which matches no branch and returns undefined — a will with the substitution
+ * paragraph missing entirely, and no error, no gap marker and nothing on the
+ * review screen to say so. The one failure this app cannot afford is the silent
+ * one, because the document looks finished either way.
+ *
+ * Per stirpes is the right thing to land on because it is what a new
+ * beneficiary starts as, so the fallback is the app's own default rather than a
+ * choice made quietly on the user's behalf. It is still a changed provision,
+ * but a visible one: it shows on the residuary screen and in the preview, where
+ * it can be seen and put back.
+ */
+function normalizeSubstitution(sub: any): { type: SubstitutionType; namedPerson: string } {
+  const type: SubstitutionType = SUBSTITUTION_TYPES.includes(sub?.type) ? sub.type : 'per-stirpes';
+  // Typed rather than trusted: this is concatenated straight into a sentence of
+  // the will, so a number here becomes a number in the document.
+  return { type, namedPerson: typeof sub?.namedPerson === 'string' ? sub.namedPerson : '' };
+}
+
 function normalizeBeneficiary(b: any): Beneficiary {
   return {
     id: b.id || Math.random().toString(36).slice(2),
@@ -62,7 +91,7 @@ function normalizeBeneficiary(b: any): Beneficiary {
     percentage: b.percentage || '',
     isOwnChild: b.isOwnChild ?? false,
     isMinor: b.isMinor ?? false,
-    substitution: b.substitution || { type: 'per-stirpes' as SubstitutionType, namedPerson: '' },
+    substitution: normalizeSubstitution(b.substitution),
     // Drafts saved before beneficiaries could be picked from the family details
     // reopen unlinked, which is what they are: names typed by hand. They carry
     // on being matched by name, exactly as they were. Inventing a link by

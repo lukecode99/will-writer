@@ -143,6 +143,29 @@ export function blockingProblems(data: WillData): WillProblem[] {
     });
   }
 
+  // A child row with no name in it.
+  //
+  // The declaration as to family prints every child by name, so a blank row was
+  // being finalised as "I have 3 children living at the date of this Will,
+  // namely Oliver Smith (born 1 June 2004), Amelia Smith (born 12 September
+  // 2006), [CHILD NAME MISSING]." — a signable will with a gap marker in the
+  // middle of a sentence, produced without a word of complaint. Every other gap
+  // marker in this document is blocked before finalisation; this one was
+  // reached by a row someone started and did not finish, which is the likeliest
+  // way of all to arrive at one.
+  //
+  // The unnamed beneficiary check directly below has said the same thing about
+  // shares since the beginning. This is that check, for the other list.
+  const unnamedChildren = data.children.filter(c => !c.name.trim()).length;
+  if (unnamedChildren > 0) {
+    problems.push({
+      step: 'family',
+      message: unnamedChildren === 1
+        ? 'One of your children has no name. Add it, or remove the row.'
+        : `${unnamedChildren} of your children have no name. Add them, or remove the rows.`,
+    });
+  }
+
   if (data.beneficiaries.length === 0) {
     problems.push({
       step: 'residuary',
@@ -329,6 +352,42 @@ export function warnings(data: WillData): WillProblem[] {
       message: data.children.length === 0
         ? 'You have not listed any children, and have not confirmed that is right. Go back to Partner & Children and check.'
         : 'You have not confirmed that every one of your children is listed. Go back to Partner & Children and check — a child left out can apply to the court for provision from your estate.',
+    });
+  }
+
+  // A child who exists on one screen and not the other.
+  //
+  // The Family step can be passed by ticking "I confirm I have no children",
+  // and the residuary step then lets a beneficiary be flagged as your own
+  // child. Nothing compared the two, so a will could say in one clause that
+  // the testator has no children and in the next that a beneficiary is one.
+  //
+  // The share itself works, which is why this warns rather than blocks. What
+  // does not work is the guardian: `hasMinorChildren` reads `data.children` and
+  // nothing else, so an empty family list means the guardians step never
+  // appears, no appointment is asked for, and the existing "you have children
+  // under 18 and have not appointed a guardian" warning cannot fire either.
+  // Every other omission in a will can be argued about afterwards; who looks
+  // after a young child is the one that cannot, because by then the person who
+  // knew the answer is dead and the court decides instead.
+  //
+  // Deliberately not repaired on the user's behalf. Copying the beneficiary
+  // into the family details would invent a child out of a switch; clearing the
+  // switch would disinherit one. Both are worse than saying so and letting the
+  // person who knows which it is decide. That is the standing rule for this
+  // app: warn on a contradiction, never resolve it silently.
+  const childBeneficiaries = data.beneficiaries.filter(b => b.isOwnChild);
+  if (data.children.length === 0 && childBeneficiaries.length > 0) {
+    const names = childBeneficiaries.map(b => b.name.trim()).filter(Boolean);
+    const who = names.length > 0 ? names.join(', ') : 'One of your beneficiaries';
+    const plural = childBeneficiaries.length > 1;
+    const minors = childBeneficiaries.filter(b => b.isMinor).map(b => b.name.trim()).filter(Boolean);
+    const guardianNote = minors.length > 0
+      ? ` ${minors.join(', ')} ${minors.length > 1 ? 'are' : 'is'} also marked as under 18, so no guardian has been appointed and you have not been asked for one — if that is right, add them above and you will be.`
+      : '';
+    out.push({
+      step: 'family',
+      message: `${who} ${plural ? 'are' : 'is'} marked as your ${plural ? 'children' : 'child'} on the residuary step, but no children are listed on Partner & Children. Add them there — that list is what the rest of the will works from.${guardianNote}`,
     });
   }
 

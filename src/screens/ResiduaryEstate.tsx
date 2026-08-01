@@ -322,6 +322,24 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
             <Text style={styles.toggleLabel}>This beneficiary is under 18</Text>
           </View>
 
+          {/* Said here as well as on the review screen, because this is the
+              switch that causes it and the family list is two steps back. The
+              guardian sentence is the part that matters: a share can be argued
+              about afterwards, but who looks after a young child cannot be,
+              because by then the person who knew the answer is dead. */}
+          {b.isOwnChild && data.children.length === 0 && (
+            <View style={styles.warningBox}>
+              <Text style={styles.warningText}>
+                ⚠️ You have marked {b.name.trim() || 'this beneficiary'} as your child, but no children are
+                listed on the Partner &amp; Children step. Add them there — that list is what the rest of
+                the will works from.
+                {b.isMinor
+                  ? ' Because they are not on it, you will not be asked to appoint a guardian for them, even though you have said they are under 18.'
+                  : ''}
+              </Text>
+            </View>
+          )}
+
           <Text style={[shared.label, { marginTop: 16 }]}>If {b.name || 'this person'} dies before you</Text>
           <Text style={shared.hint}>Choose what happens to their share.</Text>
 

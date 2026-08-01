@@ -251,5 +251,50 @@ await test('field defaults on old drafts', async () => {
     data.childrenConfirmed === false);
 });
 
+/**
+ * A will saved by one build and reopened by another.
+ *
+ * Adding a fourth substitution type made this reachable for the first time, and
+ * the traffic runs both ways: a will written on a phone that has updated gets
+ * opened on one that has not, and old builds stay installed for a long time.
+ *
+ * The unknown string used to be stored as-is and handed to the clause switch,
+ * which matches no branch and returns undefined — a will with the substitution
+ * paragraph missing entirely, and no error, no gap marker and nothing on the
+ * review screen to say so. The one failure this app cannot afford is the silent
+ * one, because the document looks finished either way.
+ */
+await test('substitution types the build does not recognise', async () => {
+  const docs = [{
+    id: 'd1', step: 0, createdAt: 1, updatedAt: 1,
+    data: {
+      fullName: 'Luke Holder',
+      children: [],
+      beneficiaries: [
+        { id: 'b1', name: 'Jane Smith', percentage: '50', substitution: { type: 'own-children', namedPerson: '' } },
+        { id: 'b2', name: 'Amy Doyle', percentage: '30', substitution: { type: 'quantum-entanglement', namedPerson: 'Bob' } },
+        { id: 'b3', name: 'Rob Hughes', percentage: '20', substitution: { type: 'named', namedPerson: 42 } },
+      ],
+      specificGifts: [], guardians: [],
+    },
+  }];
+  const { storage } = freshStorage({ [DOCS_KEY]: JSON.stringify(docs) });
+  await storage.hydrateStorage();
+  const [a, b, c] = storage.loadWillData('d1').beneficiaries;
+
+  check('a substitution this build understands survives reopening',
+    a.substitution.type === 'own-children');
+  // Per stirpes because it is what a new beneficiary starts as, so the fallback
+  // is the app's own default rather than a choice made quietly on someone's
+  // behalf. It is still a changed provision, but a visible one: it shows on the
+  // residuary screen and in the preview, where it can be seen and put back.
+  check('an unrecognised substitution falls back to the default, not to nothing',
+    b.substitution.type === 'per-stirpes');
+  // This value is concatenated straight into a sentence of the will, so a
+  // number here becomes a number in the document.
+  check('a named person that is not a string is not concatenated into the will',
+    c.substitution.namedPerson === '');
+});
+
 console.log(`\n${ran} checks, ${ran - failures} passed, ${failures} failed.`);
 if (failures) process.exitCode = 1;

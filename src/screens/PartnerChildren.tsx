@@ -159,11 +159,11 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
       <View style={styles.confirmCard}>
         <Text style={styles.confirmSummary}>{childrenSummary(data.children)}</Text>
         <Text style={styles.confirmBody}>
-          Include every child of yours — adopted children, children from an earlier relationship,
+          Include every child you have — adopted children, children from an earlier relationship,
           and adult children who are financially independent. A child you leave out can apply to
-          the court for provision from your estate after your death, and you will not be there to
-          explain what you meant. Add a step-child only if you want them treated as your child;
-          unless you have adopted them, they are not automatically.
+          the court for provision from your estate, and you will not be there to explain your
+          reasons. A step-child is not legally your child unless you have adopted them — add one
+          only if you want them treated the same as your own.
         </Text>
         <TouchableOpacity
           style={styles.confirmRow}
