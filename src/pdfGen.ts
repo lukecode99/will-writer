@@ -206,8 +206,15 @@ function substitutionClause(b: Beneficiary): string {
   // wills reach here from disk, and `normalizeSubstitution` is the only thing
   // between a JSON file written by some other build and this function. A missing
   // array would throw halfway through generating a document.
-  const raw = b.substitution || { type: 'per-stirpes' as const, substitutes: [] };
-  const sub = { type: raw.type, substitutes: Array.isArray(raw.substitutes) ? raw.substitutes : [] };
+  const raw = b.substitution || { type: 'per-stirpes' as const, substitutes: [], namedFallback: 'survivors' as const };
+  const sub = {
+    type: raw.type,
+    substitutes: Array.isArray(raw.substitutes) ? raw.substitutes : [],
+    // Whitelisted, not trusted: anything other than the explicit new value —
+    // including every draft saved before the field existed — drafts as the
+    // clause always drafted, survivors first.
+    namedFallback: raw.namedFallback === 'issue' ? 'issue' as const : 'survivors' as const,
+  };
   const name = field(b.name, 'beneficiary name missing');
   const namePoss = `${name}'s`;
 
@@ -329,20 +336,57 @@ function substitutionClause(b: Beneficiary): string {
    * passed through the substitute's own estate.
    */
   if (sub.type === 'named') {
-    const subs = sub.substitutes.length > 0 ? sub.substitutes : [{ id: '', name: '', share: '' }];
+    const subs = sub.substitutes.length > 0
+      ? sub.substitutes
+      : [{ id: '', name: '', share: '', address: '' }];
 
+    // The address rides with the FIRST mention of the name only. A will
+    // identifies a person once and then refers back; repeating "of 4 Elm Road"
+    // at every mention reads as if each might be a different John Smith.
+    const identify = (s: { name: string; address?: string }): string =>
+      field(s.name, 'substitute name missing') +
+      (typeof s.address === 'string' && s.address.trim() ? ` of ${inlineAddress(s.address)}` : '');
+
+    // The 'issue' fallback keys to "died in my lifetime or failed to survive me
+    // by 30 days" — the same double-limb as the per-stirpes clauses above, and
+    // for the same reason: "predecease" alone leaves a substitute who outlives
+    // the testator by a week in neither limb, with their part passing through
+    // their own estate instead of to their children.
     if (subs.length === 1) {
       const named = field(subs[0].name, 'substitute name missing');
+      if (sub.namedFallback === 'issue') {
+        return (
+          `${trigger}, ${namePoss} share shall pass to ${identify(subs[0])}, provided that ${named} ` +
+          `survives me by 30 days. If ${named} shall have died in my lifetime or failed to survive ` +
+          `me by 30 days, leaving children living at my death, those children shall take that share ` +
+          `equally between them (per stirpes); and if ${named} shall not so survive me and shall ` +
+          `leave no such children, that share shall be divided among the other surviving residuary ` +
+          `beneficiaries in proportion to their respective shares.${s33}`
+        );
+      }
       return (
-        `${trigger}, ${namePoss} share shall pass to ${named}, provided that ${named} survives me ` +
+        `${trigger}, ${namePoss} share shall pass to ${identify(subs[0])}, provided that ${named} survives me ` +
         `by 30 days; and if ${named} shall not so survive me, that share shall be divided among ` +
         `the other surviving residuary beneficiaries in proportion to their respective shares.${s33}`
       );
     }
 
     const apportioned = subs
-      .map(s => `as to ${pctLabel(s.share)} thereof to ${field(s.name, 'substitute name missing')}`)
+      .map(s => `as to ${pctLabel(s.share)} thereof to ${identify(s)}`)
       .join(', and ');
+    if (sub.namedFallback === 'issue') {
+      return (
+        `${trigger}, ${namePoss} share shall pass ${apportioned}, provided in each case that the ` +
+        `substitute survives me by 30 days. If any of them shall have died in my lifetime or failed ` +
+        `to survive me by 30 days, leaving children living at my death, those children shall take ` +
+        `that person's part equally between them (per stirpes); if any of them shall so fail to ` +
+        `survive me leaving no such children, that person's part shall pass to such of the others ` +
+        `of them as shall so survive me, in proportion to their respective parts; and if no part of ` +
+        `${namePoss} share passes under the foregoing provisions of this clause, it shall be ` +
+        `divided among the other surviving residuary beneficiaries in proportion to their ` +
+        `respective shares.${s33}`
+      );
+    }
     return (
       `${trigger}, ${namePoss} share shall pass ${apportioned}, provided in each case that the ` +
       `substitute survives me by 30 days. If any of them shall fail to survive me by 30 days, that ` +

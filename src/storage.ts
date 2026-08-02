@@ -114,6 +114,12 @@ function normalizeSubstitution(sub: any): BeneficiarySubstitution {
     ? sub.type
     : legacyNamed ? 'named' : 'per-stirpes';
 
+  // Whitelisted like the type: only the explicit new value counts. Every draft
+  // saved before the field existed — and any corrupted value — lands on
+  // 'survivors', which is what the clause did before there was a choice, so
+  // reopening an old will cannot quietly reroute a substitute's part.
+  const namedFallback = sub?.namedFallback === 'issue' ? 'issue' as const : 'survivors' as const;
+
   // A list of substitutes, from a build that has one.
   //
   // Typed rather than trusted at every field: these are concatenated straight
@@ -129,8 +135,9 @@ function normalizeSubstitution(sub: any): BeneficiarySubstitution {
         id: typeof s.id === 'string' && s.id ? s.id : Math.random().toString(36).slice(2),
         name: str(s.name),
         share: numericStr(s.share),
+        address: str(s.address),
       }));
-    if (substitutes.length > 0 || !legacyNamed) return { type, substitutes };
+    if (substitutes.length > 0 || !legacyNamed) return { type, substitutes, namedFallback };
   }
 
   // A draft saved before substitutes could be a list, when the field was one
@@ -152,11 +159,12 @@ function normalizeSubstitution(sub: any): BeneficiarySubstitution {
   if (typeof sub?.namedPerson === 'string' && sub.namedPerson.trim()) {
     return {
       type,
-      substitutes: [{ id: Math.random().toString(36).slice(2), name: sub.namedPerson, share: '100' }],
+      substitutes: [{ id: Math.random().toString(36).slice(2), name: sub.namedPerson, share: '100', address: '' }],
+      namedFallback,
     };
   }
 
-  return { type, substitutes: [] };
+  return { type, substitutes: [], namedFallback };
 }
 
 /**

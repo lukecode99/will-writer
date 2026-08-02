@@ -132,8 +132,10 @@ export default function Guardians({ data, onChange, onNext, onBack }: Props) {
 
       <Text style={shared.sectionTitle}>First choice</Text>
       <Text style={shared.hint}>
-        Appointed together. Name two if you want a couple to take the children on jointly —
-        if one of them cannot act, the other carries on alone.
+        Appointed jointly — and they do not have to be a couple. Name one person, or any two
+        adults you trust to share the role; if one of them cannot act, the others carry on. One
+        practical note: guardians appointed together decide between them where the children live,
+        so if you name people from different households, make sure they would agree.
       </Text>
 
       {primaries.map((g, i) => renderGuardian(g, i, 'Guardian'))}

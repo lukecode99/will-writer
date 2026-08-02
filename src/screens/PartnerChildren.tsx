@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { WillData, Child } from '../types';
 import { dobError, parseUkDate, ageInYears, childrenSummary, formatUkDateInput } from '../family';
+import { unprintableChars } from '../text';
 import { shared, C } from './shared';
 import { confirmDestructive } from '../platform';
 
@@ -50,8 +51,23 @@ function ageHint(dob: string): string {
 
 export default function PartnerChildren({ data, onChange, onNext, onBack }: Props) {
   const hasPartner = !!(data.partnerName || data.partnerAddress);
+  const other = data.isForSomeoneElse;
   const dobProblems = data.children.map(child => childDobError(child.dob));
-  const canContinue = dobProblems.every(problem => !problem) && data.childrenConfirmed;
+
+  // Marriage revokes a will (s.18 Wills Act 1837), so anyone not already
+  // married or in a civil partnership is asked about a forthcoming one. The
+  // question lives here, next to the partner's name, because they are the
+  // same person in almost every life — it used to sit on About You and made
+  // people type the name twice. For someone who IS married the question is
+  // meaningless, and a stale "yes" is cleared by the marital chips on About You.
+  const showExpectation =
+    data.maritalStatus !== 'married' && data.maritalStatus !== 'civilPartnership';
+  const intendedBad = unprintableChars(data.intendedSpouseName);
+  const expectationBlocked =
+    showExpectation && data.expectingMarriage && (!data.intendedSpouseName.trim() || intendedBad.length > 0);
+
+  const canContinue =
+    dobProblems.every(problem => !problem) && data.childrenConfirmed && !expectationBlocked;
 
   /**
    * Adding or removing a child un-answers the question, because the list that
@@ -120,6 +136,70 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
             multiline
             numberOfLines={2}
           />
+        </>
+      ) : null}
+
+      {showExpectation ? (
+        <>
+          <Text style={shared.label}>
+            {other
+              ? 'Are they getting married or entering a civil partnership soon?'
+              : 'Are you getting married or entering a civil partnership soon?'}
+          </Text>
+          <Text style={styles.expectationHint}>
+            Marriage or civil partnership normally cancels a will automatically. If one is
+            planned, this will can be written so it survives — but only if it names the person.
+          </Text>
+          <View style={styles.chipRow}>
+            {[{ v: false, label: 'No' }, { v: true, label: 'Yes' }].map(opt => (
+              <TouchableOpacity
+                key={String(opt.v)}
+                style={[styles.chip, data.expectingMarriage === opt.v ? styles.chipActive : null]}
+                onPress={() =>
+                  opt.v
+                    ? onChange({
+                        expectingMarriage: true,
+                        // Tapping Yes takes the partner's name typed just above,
+                        // so nobody types the same name twice. Still editable —
+                        // the intended spouse is usually the partner, not always.
+                        intendedSpouseName: data.intendedSpouseName.trim()
+                          ? data.intendedSpouseName
+                          : data.partnerName.trim(),
+                      })
+                    : onChange({ expectingMarriage: false, intendedSpouseName: '' })
+                }
+              >
+                <Text style={[styles.chipText, data.expectingMarriage === opt.v ? styles.chipTextActive : null]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {data.expectingMarriage ? (
+            <>
+              <Text style={shared.label}>
+                {other ? 'Full name of the person they expect to marry *' : 'Full name of the person you expect to marry *'}
+              </Text>
+              <TextInput
+                style={[shared.input, expectationBlocked ? shared.inputError : null]}
+                placeholder="e.g. Samantha Jane Carter"
+                value={data.intendedSpouseName}
+                onChangeText={v => onChange({ intendedSpouseName: v })}
+                autoCapitalize="words"
+              />
+              {!data.intendedSpouseName.trim() ? (
+                <Text style={shared.error}>
+                  {other
+                    ? 'Name the person they expect to marry. The law only preserves a will made in expectation of a particular marriage.'
+                    : 'Name the person you expect to marry. The law only preserves a will made in expectation of a particular marriage.'}
+                </Text>
+              ) : intendedBad.length > 0 ? (
+                <Text style={shared.error}>
+                  We cannot print {intendedBad.join(' ')}. Please write the name using the Latin alphabet.
+                </Text>
+              ) : null}
+            </>
+          ) : null}
         </>
       ) : null}
 
@@ -209,6 +289,37 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
 }
 
 const styles = StyleSheet.create({
+  expectationHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: C.textLight,
+    marginBottom: 8,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 6,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+  },
+  chipActive: {
+    backgroundColor: C.primary,
+    borderColor: C.primary,
+  },
+  chipText: {
+    fontSize: 14,
+    color: C.text,
+  },
+  chipTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
   confirmCard: {
     backgroundColor: '#FFF8E6',
     borderWidth: 1,

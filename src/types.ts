@@ -136,7 +136,36 @@ export interface Substitute {
   id: string;
   name: string;
   share: string;
+
+  /**
+   * Optional. Everyone else the will hands money to is identified by more than
+   * a bare name — the family declaration recites the partner and children, an
+   * executor and a guardian each carry an address — but a substitute used to be
+   * a name floating free, and "John Smith" is not a person, it is a search. An
+   * address is the cheapest disambiguator there is. Optional rather than
+   * required because the substitution may never operate at all, and blocking a
+   * will over the address of someone who will probably never inherit is the
+   * wrong trade.
+   */
+  address: string;
 }
+
+/**
+ * Where a named substitute's part goes if the substitute ALSO dies first.
+ *
+ * 'survivors' — to the other named substitutes, and if none of them survive,
+ *               to the other surviving residuary beneficiaries. This is what
+ *               the clause always did, so it is what every saved draft keeps.
+ * 'issue'     — to that substitute's own children, equally (per stirpes);
+ *               only if they leave no children does the part fall back to the
+ *               survivors route.
+ *
+ * The option exists because "to my friend, and if she goes first, to her kids"
+ * is a perfectly ordinary wish that previously could not be said: the app
+ * silently rerouted a dead substitute's part sideways to people the testator
+ * may never have intended to couple together.
+ */
+export type NamedSubstituteFallback = 'survivors' | 'issue';
 
 /**
  * Where a beneficiary's share goes if they die first.
@@ -163,6 +192,8 @@ export interface Substitute {
 export interface BeneficiarySubstitution {
   type: SubstitutionType;
   substitutes: Substitute[];
+  /** Only meaningful when `type` is 'named' — see NamedSubstituteFallback. */
+  namedFallback: NamedSubstituteFallback;
 }
 
 export interface Beneficiary {

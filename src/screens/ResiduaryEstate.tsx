@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
-import { WillData, Beneficiary, Substitute, SubstitutionType } from '../types';
+import { WillData, Beneficiary, NamedSubstituteFallback, Substitute, SubstitutionType } from '../types';
 import { blockingProblems, minorFlagWarning, parsePercentage, percentageTotal } from '../validation';
 import { KnownPerson, defaultSubstitutionType, knownPeople, knownRefs } from '../people';
 import { C, shared } from './shared';
@@ -96,7 +96,10 @@ function previewText(b: Beneficiary, data: WillData): string {
       const subs = sub.substitutes;
       if (subs.length === 0) return `${gone}, their ${pct}share passes to people you name — none added yet.`;
       if (subs.length === 1) {
-        return `${gone}, their ${pct}share passes to ${subs[0].name.trim() || '(name not yet entered)'}. If they die before you too, it is divided among the other surviving beneficiaries.`;
+        const who = subs[0].name.trim() || '(name not yet entered)';
+        return sub.namedFallback === 'issue'
+          ? `${gone}, their ${pct}share passes to ${who}. If they die before you too, it passes equally to ${who}'s own children; only if they leave no children is it divided among the other surviving beneficiaries.`
+          : `${gone}, their ${pct}share passes to ${who}. If they die before you too, it is divided among the other surviving beneficiaries.`;
       }
       // Read back as a share of the estate as well as of the share, because
       // that conversion is where the misunderstanding lives — "50%" typed under
@@ -110,7 +113,9 @@ function previewText(b: Beneficiary, data: WillData): string {
         const estatePart = ofEstate === null ? '' : ` = ${Number(((share / 100) * ofEstate).toFixed(2))}% of your estate`;
         return `${who} ${share}%${estatePart}`;
       });
-      return `${gone}, their ${pct}share is divided between: ${parts.join('; ')}. If one of them dies before you too, their part goes to the others; if none survive, it is divided among the other surviving beneficiaries.`;
+      return sub.namedFallback === 'issue'
+        ? `${gone}, their ${pct}share is divided between: ${parts.join('; ')}. If one of them dies before you too, their part passes equally to their own children; only if they leave no children does it go to the others named, and failing that to the other surviving beneficiaries.`
+        : `${gone}, their ${pct}share is divided between: ${parts.join('; ')}. If one of them dies before you too, their part goes to the others; if none survive, it is divided among the other surviving beneficiaries.`;
     }
     case 'pro-rata': {
       const others = proRataResult(allBens, b.id);
@@ -135,7 +140,7 @@ const BASE_OPTIONS: SubOption[] = [
   {
     value: 'per-stirpes',
     label: 'Their children equally',
-    detail: 'Passes to their own children in equal shares (per stirpes). Default under Wills Act 1837 s.33 for your own children.',
+    detail: 'Passes to their own children in equal shares (per stirpes). If one of those children has also died, that child\'s own children take their parent\'s part between them; a child who dies leaving no children drops out and the others share equally. Default under Wills Act 1837 s.33 for your own children.',
   },
   {
     value: 'named',
@@ -146,6 +151,28 @@ const BASE_OPTIONS: SubOption[] = [
     value: 'pro-rata',
     label: 'Pro-rata among survivors',
     detail: 'Their share is divided among the other beneficiaries in proportion to their existing shares.',
+  },
+];
+
+/**
+ * Where a named substitute's own part goes if the substitute also dies first.
+ *
+ * Until this existed the answer was hardcoded to the survivors route, which is
+ * the right default but not always the wish — "to my friend, and if she goes
+ * first, to her kids" needs the second option. Both are stated in terms of the
+ * onward destination rather than legal labels, because "per stirpes" on a
+ * button answers nothing for the person reading it.
+ */
+const FALLBACK_OPTIONS: { value: NamedSubstituteFallback; label: string; detail: string }[] = [
+  {
+    value: 'survivors',
+    label: 'The others share it',
+    detail: 'Their part is shared by the other people named here — or, if none of them survive, by your other beneficiaries.',
+  },
+  {
+    value: 'issue',
+    label: 'Their own children take it',
+    detail: 'Their part passes equally to their own children (per stirpes). Only if they leave no children does it go to the others.',
   },
 ];
 
@@ -184,6 +211,12 @@ function subOptions(b: Beneficiary, data: WillData): SubOption[] {
 }
 
 export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Props) {
+  // Whether the "who is this beneficiary?" chooser is open. The people already
+  // entered used to sit permanently above the add button as a wall of chips —
+  // read as "these people are already in the will" by exactly the person the
+  // chips were meant to help. Now the question is only asked once someone has
+  // said they are adding a beneficiary, which is the only moment it makes sense.
+  const [choosing, setChoosing] = useState(false);
   const known = knownPeople(data);
   const byRef = new Map(known.map(p => [p.ref, p]));
   const liveRefs = knownRefs(data);
@@ -211,6 +244,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           substitution: {
             type: defaultSubstitutionType(person ? person.isOwnChild : false, data),
             substitutes: [],
+            namedFallback: 'survivors',
           },
         },
       ],
@@ -274,7 +308,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
   }
 
   function addSub(b: Beneficiary, name: string) {
-    setSubstitutes(b, evenShares([...b.substitution.substitutes, { id: uid(), name, share: '' }]));
+    setSubstitutes(b, evenShares([...b.substitution.substitutes, { id: uid(), name, share: '', address: '' }]));
   }
 
   function updateSub(b: Beneficiary, subId: string, updates: Partial<Substitute>) {
@@ -377,12 +411,25 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           ) : null}
 
           <Text style={shared.label}>Relationship</Text>
-          <TextInput
-            style={shared.input}
-            placeholder="e.g. spouse, daughter, friend"
-            value={b.relationship}
-            onChangeText={v => updateBen(b.id, { relationship: v })}
-          />
+          {linked ? (
+            /* Locked for the same reason the name is. For a person picked from
+               the family details the relationship is a fact the app already
+               holds — partner or child — and it follows the marital status
+               automatically, so "partner" becomes "spouse" when the About You
+               answer changes. A second editable copy here was a way to tell
+               the will this person is someone they are not. */
+            <View style={styles.linkedName}>
+              <Text style={styles.linkedNameText}>{b.relationship}</Text>
+              <Text style={styles.linkedTag}>from your family details</Text>
+            </View>
+          ) : (
+            <TextInput
+              style={shared.input}
+              placeholder="e.g. spouse, daughter, friend"
+              value={b.relationship}
+              onChangeText={v => updateBen(b.id, { relationship: v })}
+            />
+          )}
 
           <Text style={shared.label}>Share (%)</Text>
           <TextInput
@@ -545,33 +592,47 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
                     : 'Add more than one person if you want their share split.'}
                 </Text>
 
-                {subs.map((s, si) => (
-                  <View key={s.id} style={styles.subRow}>
-                    <View style={{ flex: 1 }}>
-                      <TextInput
-                        style={[shared.input, !s.name.trim() ? styles.inputError : null]}
-                        placeholder="Full name or charity name"
-                        value={s.name}
-                        onChangeText={v => updateSub(b, s.id, { name: v })}
-                        autoCapitalize="words"
-                      />
-                    </View>
-                    {multiple ? (
-                      <View style={styles.subShare}>
+                {subs.map(s => (
+                  <View key={s.id} style={styles.subBlock}>
+                    <View style={styles.subRow}>
+                      <View style={{ flex: 1 }}>
                         <TextInput
-                          style={[shared.input, pctError(s.share) ? styles.inputError : null]}
-                          placeholder="%"
-                          value={s.share}
-                          onChangeText={v => updateSub(b, s.id, { share: sanitisePct(v) })}
-                          keyboardType="decimal-pad"
-                          inputMode="decimal"
-                          maxLength={6}
+                          style={[shared.input, !s.name.trim() ? styles.inputError : null]}
+                          placeholder="Full name or charity name"
+                          value={s.name}
+                          onChangeText={v => updateSub(b, s.id, { name: v })}
+                          autoCapitalize="words"
                         />
                       </View>
-                    ) : null}
-                    <TouchableOpacity style={styles.subRemove} onPress={() => removeSub(b, s.id)}>
-                      <Text style={shared.dangerBtnText}>✕</Text>
-                    </TouchableOpacity>
+                      {multiple ? (
+                        <View style={styles.subShare}>
+                          <TextInput
+                            style={[shared.input, pctError(s.share) ? styles.inputError : null]}
+                            placeholder="%"
+                            value={s.share}
+                            onChangeText={v => updateSub(b, s.id, { share: sanitisePct(v) })}
+                            keyboardType="decimal-pad"
+                            inputMode="decimal"
+                            maxLength={6}
+                          />
+                        </View>
+                      ) : null}
+                      <TouchableOpacity style={styles.subRemove} onPress={() => removeSub(b, s.id)}>
+                        <Text style={shared.dangerBtnText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {/* Optional on purpose. A substitute may never inherit at
+                        all, so the will is not blocked over their address —
+                        but a bare name in a will is a search, not a person,
+                        and executors are the ones who have to run it. */}
+                    <TextInput
+                      style={[shared.input, shared.inputMulti]}
+                      placeholder="Their address (optional — helps your executors identify them)"
+                      value={s.address}
+                      onChangeText={v => updateSub(b, s.id, { address: v })}
+                      multiline
+                      numberOfLines={2}
+                    />
                   </View>
                 ))}
 
@@ -604,6 +665,36 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
                   </TouchableOpacity>
                 </View>
 
+                {subs.length > 0 ? (
+                  <>
+                    <Text style={[shared.label, { marginTop: 14 }]}>
+                      {multiple
+                        ? 'If one of these people dies before you too'
+                        : `If ${subs[0].name.trim() || 'this person'} dies before you too`}
+                    </Text>
+                    <View style={styles.radioGroup}>
+                      {FALLBACK_OPTIONS.map(opt => {
+                        const selected = b.substitution.namedFallback === opt.value;
+                        return (
+                          <TouchableOpacity
+                            key={opt.value}
+                            style={[styles.radioOption, selected && styles.radioOptionSelected]}
+                            onPress={() => updateBen(b.id, { substitution: { ...b.substitution, namedFallback: opt.value } })}
+                          >
+                            <View style={[styles.radioCircle, selected && styles.radioCircleSelected]}>
+                              {selected && <View style={styles.radioInner} />}
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.radioLabel, selected && styles.radioLabelSelected]}>{opt.label}</Text>
+                              <Text style={styles.radioDetail}>{opt.detail}</Text>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : null}
+
                 {multiple ? (
                   <View style={[styles.totalBar, { backgroundColor: subTotalOk ? '#D1FAE5' : '#FEF3C7', marginTop: 8 }]}>
                     <Text style={[styles.totalText, { color: subTotalOk ? '#065F46' : '#92400E' }]}>
@@ -633,31 +724,50 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
         );
       })}
 
-      {available.length > 0 ? (
+      {/* One button, then the question. Tapping "add" opens a chooser offering
+          the people the will already knows about (picking one links the share
+          to that person) alongside "someone else" for a hand-typed name. When
+          nobody is left to offer, the button just adds a blank entry — a
+          chooser with one option is a speed bump, not a question. */}
+      {choosing && available.length > 0 ? (
         <View style={styles.pickerBlock}>
-          <Text style={styles.pickerTitle}>People you have already told us about</Text>
+          <Text style={styles.pickerTitle}>Who is this beneficiary?</Text>
           <Text style={shared.hint}>
-            Adding someone from here links this share to that person, so correcting their name on the
-            Family step corrects it here too. Each person can only be added once.
+            Picking someone from your family details links this share to them, so correcting their
+            name on the Family step corrects it here too. Each person can only be added once.
           </Text>
           <View style={styles.chipRow}>
             {available.map(p => (
-              <TouchableOpacity key={p.ref} style={styles.chip} onPress={() => addBeneficiary(p)}>
+              <TouchableOpacity
+                key={p.ref}
+                style={styles.chip}
+                onPress={() => { addBeneficiary(p); setChoosing(false); }}
+              >
                 <Text style={styles.chipText}>+ {p.name}</Text>
                 <Text style={styles.chipRel}>{p.relationship}</Text>
               </TouchableOpacity>
             ))}
+            <TouchableOpacity
+              style={styles.chip}
+              onPress={() => { addBeneficiary(); setChoosing(false); }}
+            >
+              <Text style={styles.chipText}>+ Someone else</Text>
+            </TouchableOpacity>
           </View>
+          <TouchableOpacity style={shared.secondaryBtn} onPress={() => setChoosing(false)}>
+            <Text style={shared.secondaryBtnText}>Cancel</Text>
+          </TouchableOpacity>
         </View>
-      ) : null}
-
-      {/* Wrapped rather than passed directly: `onPress` hands the press event
-          to its handler, which would arrive as the person to link to. */}
-      <TouchableOpacity style={shared.addBtn} onPress={() => addBeneficiary()}>
-        <Text style={shared.addBtnText}>
-          {known.length > 0 ? '+ Add someone else' : '+ Add a beneficiary'}
-        </Text>
-      </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={shared.addBtn}
+          onPress={() => (available.length > 0 ? setChoosing(true) : addBeneficiary())}
+        >
+          <Text style={shared.addBtnText}>
+            {data.beneficiaries.length > 0 ? '+ Add another beneficiary' : '+ Add a beneficiary'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {data.beneficiaries.length > 0 ? (
         <View style={[styles.totalBar, { backgroundColor: totalOk ? '#D1FAE5' : '#FEF3C7' }]}>
@@ -748,6 +858,9 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: C.danger,
+  },
+  subBlock: {
+    marginBottom: 10,
   },
   subRow: {
     flexDirection: 'row',

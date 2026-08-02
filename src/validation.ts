@@ -81,7 +81,7 @@ function namedFields(data: WillData): Array<{ step: StepKey; label: string; valu
     { step: 'executors', label: 'the backup executor address', value: data.backupExecutor.address },
     { step: 'residuary', label: 'the backstop wording', value: data.ultimateBackstop },
     { step: 'funeral', label: 'your funeral wishes', value: data.funeralWishes },
-    { step: 'about', label: 'the name of the person you expect to marry', value: data.intendedSpouseName },
+    { step: 'family', label: 'the name of the person you expect to marry', value: data.intendedSpouseName },
   ];
   data.children.forEach(child => {
     fields.push({ step: 'family', label: `the name of your child "${child.name}"`, value: child.name });
@@ -165,7 +165,7 @@ export function blockingProblems(data: WillData): WillProblem[] {
   // "Whoever I marry" does not engage the saving, so the name is required.
   if (data.expectingMarriage && !data.intendedSpouseName.trim()) {
     problems.push({
-      step: 'about',
+      step: 'family',
       message: 'You said this will is made in expectation of marriage, but did not name the person you expect to marry. The law only preserves a will made in expectation of a particular marriage.',
     });
   }

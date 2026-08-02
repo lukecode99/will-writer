@@ -138,27 +138,56 @@ function proRataResult(
   }));
 }
 
-function whatIfOutcome(b: Beneficiary, allBens: Beneficiary[]): string {
+/**
+ * The share's journey as a sequence of destinations, one per line.
+ *
+ * This used to be one sentence per beneficiary ("Sam — 100%", "If nobody: John",
+ * "Predeceases: children") — three true statements that never joined up, on the
+ * screen whose whole job is to show where the money goes. What the reader wants
+ * is the order: Samantha, then the children, then John. So each entry is a step
+ * in that order, rendered as an arrowed chain, and every chain ends at the same
+ * place the will does — the ultimate backstop, which only operates if nobody
+ * above it survives.
+ */
+function chainSteps(b: Beneficiary, data: WillData): string[] {
+  const steps: string[] = [];
   const sub = b.substitution;
   switch (sub.type) {
     case 'own-children':
-      return 'Your own children inherit equally, and a deceased child\'s share goes to their children';
+      steps.push('your children equally (a child of yours who has died is replaced by their own children)');
+      break;
     case 'per-stirpes':
-      return `${b.name}'s own children inherit equally (per stirpes)`;
+      steps.push(`${b.name.trim() || '(unnamed)'}'s own children equally (a child of theirs who has died is replaced by their own children)`);
+      break;
     case 'named': {
       const named = sub.substitutes.filter(s => s.name.trim());
-      if (named.length === 0) return 'Named recipients (not yet specified)';
-      if (named.length === 1) return `Passes to ${named[0].name.trim()}`;
-      // Shares shown, because this row is read back to check the will says what
-      // was meant, and between two named substitutes the split IS the provision.
-      return named.map(s => `${s.name.trim()}: ${s.share.trim() || '?'}% of their share`).join(', ');
+      // Shares shown, because this panel is read back to check the will says
+      // what was meant, and between two named substitutes the split IS the
+      // provision.
+      if (named.length === 0) steps.push('the people you name (none added yet)');
+      else if (named.length === 1) steps.push(named[0].name.trim());
+      else steps.push(named.map(s => `${s.name.trim()} (${s.share.trim() || '?'}% of the share)`).join(' + '));
+      if (named.length > 0 && sub.namedFallback === 'issue') {
+        steps.push('a named person who has died is replaced by their own children');
+      }
+      break;
     }
     case 'pro-rata': {
-      const others = proRataResult(allBens, b.id);
-      if (others.length === 0) return 'No other beneficiaries';
-      return others.map(o => `${o.name}: ${o.pct.toFixed(1)}%`).join(', ');
+      const others = proRataResult(data.beneficiaries, b.id);
+      steps.push(others.length === 0
+        ? 'the other beneficiaries (none yet)'
+        : `the other beneficiaries, pro-rata: ${others.map(o => `${o.name} ${o.pct.toFixed(1)}%`).join(', ')}`);
+      break;
     }
   }
+  // The sideways step. Skipped for pro-rata, where it IS the first step.
+  if (sub.type !== 'pro-rata' && data.beneficiaries.some(x => x.id !== b.id && x.name.trim())) {
+    steps.push('the other surviving beneficiaries');
+  }
+  if (data.ultimateBackstop.trim()) {
+    steps.push(`${data.ultimateBackstop.trim()} (only if nobody above survives)`);
+  }
+  return steps;
 }
 
 export default function Review({ data, onEdit, onBack, onRestart }: Props) {
@@ -258,9 +287,6 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
         <Row label="Address" value={data.address} />
         <Row label="Date of birth" value={data.dob} />
         <Row label="Marital status" value={MARITAL_LABELS[data.maritalStatus] ?? data.maritalStatus} />
-        {data.expectingMarriage && data.intendedSpouseName.trim() ? (
-          <Row label="Expecting to marry" value={data.intendedSpouseName.trim()} />
-        ) : null}
       </Section>
 
       <Section title="Partner & Children" stepKey="family" onEdit={onEdit}>
@@ -268,6 +294,9 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
           ? <Row label="Partner" value={data.partnerName} />
           : <Text style={styles.empty}>No partner recorded</Text>
         }
+        {data.expectingMarriage && data.intendedSpouseName.trim() ? (
+          <Row label="Expecting to marry" value={data.intendedSpouseName.trim()} />
+        ) : null}
         {data.children.length === 0
           ? <Text style={styles.empty}>No children recorded</Text>
           : data.children.map((c, i) => (
@@ -352,23 +381,17 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
 
       {data.beneficiaries.length > 0 && (
         <View style={styles.whatIfPanel}>
-          <Text style={styles.whatIfTitle}>What happens if a beneficiary predeceases you?</Text>
+          <Text style={styles.whatIfTitle}>If a beneficiary dies before you, their share passes down this chain</Text>
           {data.beneficiaries.map(b => (
             <View key={b.id} style={styles.whatIfRow}>
               <Text style={styles.whatIfName}>
-                {b.name || '(unnamed)'} ({shareLabel(b.percentage)})
+                {b.name || '(unnamed)'} ({shareLabel(b.percentage)}) — {subTypeLabel(b.substitution.type)}
               </Text>
-              <Text style={styles.whatIfSub}>
-                {subTypeLabel(b.substitution.type)} → {whatIfOutcome(b, data.beneficiaries)}
-              </Text>
+              {chainSteps(b, data).map((step, i) => (
+                <Text key={i} style={styles.whatIfSub}>{'→'}  {step}</Text>
+              ))}
             </View>
           ))}
-          {data.ultimateBackstop ? (
-            <View style={[styles.whatIfRow, { borderTopWidth: 1, borderTopColor: C.border, marginTop: 8, paddingTop: 8 }]}>
-              <Text style={styles.whatIfName}>If no one survives</Text>
-              <Text style={styles.whatIfSub}>{data.ultimateBackstop}</Text>
-            </View>
-          ) : null}
         </View>
       )}
 

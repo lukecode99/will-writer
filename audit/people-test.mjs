@@ -72,9 +72,15 @@ function family() {
     childrenConfirmed: true,
     primaryExecutor: { name: 'Robert Hughes', address: '9 Mill Lane' },
     beneficiaries: [
-      ben('b1', 'Jane Elizabeth Smith', '50', { relationship: 'wife', linkedPersonId: PARTNER_REF }),
-      ben('b2', 'Oliver Smith', '30', { isOwnChild: true, relationship: 'son', linkedPersonId: childRef('c1') }),
-      ben('b3', 'Amelia Smith', '20', { isOwnChild: true, relationship: 'daughter', linkedPersonId: childRef('c2') }),
+      // Relationships as the app writes them for linked people ('spouse',
+      // 'child'), not as a user might type them ('wife', 'son'). The sync now
+      // owns this field for linked entries, so a fixture holding hand-typed
+      // values would not be a will at rest — it would be one keystroke away
+      // from being rewritten, and the "very same object back" check below
+      // depends on the fixture genuinely having nothing to do.
+      ben('b1', 'Jane Elizabeth Smith', '50', { relationship: 'spouse', linkedPersonId: PARTNER_REF }),
+      ben('b2', 'Oliver Smith', '30', { isOwnChild: true, relationship: 'child', linkedPersonId: childRef('c1') }),
+      ben('b3', 'Amelia Smith', '20', { isOwnChild: true, relationship: 'child', linkedPersonId: childRef('c2') }),
     ],
     ultimateBackstop: 'the British Heart Foundation',
   };
@@ -171,6 +177,21 @@ const messages = data => warnings(data).map(w => w.message).join(' | ');
   partnerTicked.beneficiaries[0].isOwnChild = true;
   check('a linked partner is put back to not being a child',
     syncLinkedBeneficiaries(partnerTicked).beneficiaries[0].isOwnChild === false);
+}
+
+{
+  // The relationship is a fact the app holds for linked people, and it moves
+  // when the fact moves: marrying (and updating the marital status) must turn
+  // "partner" into "spouse" without the residuary screen being touched.
+  const data = family();
+  data.maritalStatus = 'single';
+  check('a linked partner\'s relationship follows the marital status',
+    syncLinkedBeneficiaries(data).beneficiaries[0].relationship === 'partner');
+
+  const stale = family();
+  stale.beneficiaries[1].relationship = 'son';
+  check('a stale relationship on a linked share is put back',
+    syncLinkedBeneficiaries(stale).beneficiaries[1].relationship === 'child');
 }
 
 {

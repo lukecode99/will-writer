@@ -92,8 +92,16 @@ export function knownRefs(data: WillData): Set<string> {
 }
 
 /**
- * Re-reads the name and child status of every linked beneficiary from the
- * family details, so the two screens cannot drift apart.
+ * Re-reads the name, relationship and child status of every linked beneficiary
+ * from the family details, so the two screens cannot drift apart.
+ *
+ * Relationship is synced as well as the name, and for the same reason: for a
+ * linked person it is a fact the app already holds, not an opinion to collect
+ * twice. It also moves when the fact moves — a partner picked while engaged
+ * reads "partner", and marrying (and updating the marital status) turns the
+ * same entry into "spouse" without the residuary screen being touched. The
+ * screen shows it read-only for linked people, so this function is the only
+ * writer and the two can never disagree.
  *
  * This runs on every change to the will, which is why it returns the object it
  * was given when there is nothing to do: it sits in the middle of a per-
@@ -116,9 +124,13 @@ export function syncLinkedBeneficiaries(data: WillData): WillData {
     if (!b.linkedPersonId) return b;
     const person = people.find(p => p.ref === b.linkedPersonId);
     if (!person) return b;
-    if (person.name === b.name && person.isOwnChild === b.isOwnChild) return b;
+    if (
+      person.name === b.name
+      && person.isOwnChild === b.isOwnChild
+      && person.relationship === b.relationship
+    ) return b;
     changed = true;
-    return { ...b, name: person.name, isOwnChild: person.isOwnChild };
+    return { ...b, name: person.name, isOwnChild: person.isOwnChild, relationship: person.relationship };
   });
 
   return changed ? { ...data, beneficiaries } : data;
