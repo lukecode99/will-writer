@@ -145,9 +145,13 @@ function proRataResult(
  * "Predeceases: children") — three true statements that never joined up, on the
  * screen whose whole job is to show where the money goes. What the reader wants
  * is the order: Samantha, then the children, then John. So each entry is a step
- * in that order, rendered as an arrowed chain, and every chain ends at the same
- * place the will does — the ultimate backstop, which only operates if nobody
- * above it survives.
+ * in that order, rendered as an arrowed chain.
+ *
+ * The ultimate backstop is deliberately NOT a step here. It belongs to the
+ * estate, not to any one share — it operates only when every chain on the
+ * panel has failed — so it is rendered once, as the panel's final row, below
+ * all of the chains. Putting it inside each chain said "John" as many times
+ * as there were beneficiaries.
  */
 function chainSteps(b: Beneficiary, data: WillData): string[] {
   const steps: string[] = [];
@@ -183,9 +187,6 @@ function chainSteps(b: Beneficiary, data: WillData): string[] {
   // The sideways step. Skipped for pro-rata, where it IS the first step.
   if (sub.type !== 'pro-rata' && data.beneficiaries.some(x => x.id !== b.id && x.name.trim())) {
     steps.push('the other surviving beneficiaries');
-  }
-  if (data.ultimateBackstop.trim()) {
-    steps.push(`${data.ultimateBackstop.trim()} (only if nobody above survives)`);
   }
   return steps;
 }
@@ -373,8 +374,14 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
             />
           ))
         }
+        {/* The backstop reads in the order it operates: after every chain in
+            the panel below has failed. So when the panel renders, the panel
+            carries it as its final row; this card only shows it when there are
+            no beneficiaries and therefore no panel to put it under. */}
         {data.ultimateBackstop
-          ? <Row label="If nobody survives" value={data.ultimateBackstop} />
+          ? (data.beneficiaries.length === 0
+            ? <Row label="If nobody survives" value={data.ultimateBackstop} />
+            : null)
           : <Text style={styles.empty}>No ultimate backstop set (intestacy applies)</Text>
         }
       </Section>
@@ -392,6 +399,12 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
               ))}
             </View>
           ))}
+          {data.ultimateBackstop ? (
+            <View style={[styles.whatIfRow, { borderTopWidth: 1, borderTopColor: C.border, marginTop: 8, paddingTop: 8 }]}>
+              <Text style={styles.whatIfName}>If nobody above survives</Text>
+              <Text style={styles.whatIfSub}>{'→'}  {data.ultimateBackstop}</Text>
+            </View>
+          ) : null}
         </View>
       )}
 
