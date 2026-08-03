@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
-import { WillData, SpecificGift, GiftSubstitutionType, GiftTaxBurden } from '../types';
+import { WillData, SpecificGift, GiftSubstitutionType, GiftTaxBurden, NamedSubstituteFallback } from '../types';
 import { blockingProblems } from '../validation';
+import { knownPeople } from '../people';
 import { notify, confirmDestructive } from '../platform';
 import { C, shared } from './shared';
 
@@ -16,9 +17,39 @@ function uid() {
   return Math.random().toString(36).slice(2);
 }
 
-const GIFT_SUB_OPTIONS: Array<{ value: GiftSubstitutionType; label: string }> = [
-  { value: 'residue', label: 'Falls into the residuary estate (default)' },
-  { value: 'named', label: 'Passes to someone else' },
+const GIFT_SUB_OPTIONS: Array<{ value: GiftSubstitutionType; label: string; detail: string }> = [
+  {
+    value: 'residue',
+    label: 'Falls into the residuary estate (default)',
+    detail: 'The gift is added to everything else you leave and passes under your residuary estate.',
+  },
+  {
+    value: 'per-stirpes',
+    label: 'Their own children take it',
+    detail: 'The gift passes equally to the recipient’s own children (per stirpes). Only if they leave no children does it fall into your residuary estate.',
+  },
+  {
+    value: 'named',
+    label: 'Passes to someone else',
+    detail: 'You name one or more people who take the gift instead. Name more than one and they take it jointly.',
+  },
+];
+
+// Where a named alternative's part goes if that alternative also dies first.
+// Same choice as a residuary substitute, but the ultimate destination is the
+// residuary estate rather than the other beneficiaries — a specific gift that
+// fails all the way through has always fallen into residue.
+const GIFT_FALLBACK_OPTIONS: Array<{ value: NamedSubstituteFallback; label: string; detail: string }> = [
+  {
+    value: 'survivors',
+    label: 'The others take it',
+    detail: 'Their part passes to the other people you’ve named here — or, if none of them survive you, the gift falls into your residuary estate.',
+  },
+  {
+    value: 'issue',
+    label: 'Their own children take it',
+    detail: 'Their part passes equally to their own children (per stirpes). Only if they leave no children does it fall into your residuary estate.',
+  },
 ];
 
 const TAX_OPTIONS: Array<{ value: GiftTaxBurden; label: string; detail: string }> = [
@@ -46,7 +77,8 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
           isCharity: false,
           taxBurden: 'bearsOwnTax',
           substitutionType: 'residue',
-          substitutionRecipient: '',
+          substitutionRecipients: [],
+          substitutionFallback: 'survivors',
         },
       ],
     });
@@ -56,6 +88,31 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
     onChange({
       specificGifts: data.specificGifts.map(g => g.id === id ? { ...g, ...updates } : g),
     });
+  }
+
+  function addGiftSub(gift: SpecificGift, name: string) {
+    updateGift(gift.id, {
+      substitutionRecipients: [...gift.substitutionRecipients, { id: uid(), name, address: '' }],
+    });
+  }
+
+  function updateGiftSub(gift: SpecificGift, subId: string, updates: Partial<{ name: string; address: string }>) {
+    updateGift(gift.id, {
+      substitutionRecipients: gift.substitutionRecipients.map(s => s.id === subId ? { ...s, ...updates } : s),
+    });
+  }
+
+  function removeGiftSub(gift: SpecificGift, subId: string) {
+    const s = gift.substitutionRecipients.find(x => x.id === subId);
+    const doRemove = () => updateGift(gift.id, {
+      substitutionRecipients: gift.substitutionRecipients.filter(x => x.id !== subId),
+    });
+    // A blank row is scaffolding, not a decision.
+    if (!s || !s.name.trim()) {
+      doRemove();
+      return;
+    }
+    confirmDestructive(`Remove ${s.name.trim()} as an alternative recipient?`, 'Remove', doRemove);
   }
 
   function removeGift(id: string) {
@@ -86,6 +143,12 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
     }
     onNext();
   }
+
+  // Anyone the will already knows about — partner and children — offered as a
+  // one-tap chip on the named-alternative list, exactly as the residuary screen
+  // does. Typing a name by hand is always allowed too; the chips exist for the
+  // people the app cannot know about, like a stepchild or a friend.
+  const known = knownPeople(data);
 
   return (
     <ScrollView contentContainerStyle={shared.scrollContent}>
@@ -187,37 +250,115 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
             If {gift.recipient || 'the recipient'} doesn't survive you
           </Text>
           <View style={styles.radioGroup}>
-            {GIFT_SUB_OPTIONS.map(opt => {
-              const selected = gift.substitutionType === opt.value;
-              return (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.radioOption, selected && styles.radioOptionSelected]}
-                  onPress={() => updateGift(gift.id, { substitutionType: opt.value })}
-                >
-                  <View style={[styles.radioCircle, selected && styles.radioCircleSelected]}>
-                    {selected && <View style={styles.radioInner} />}
-                  </View>
-                  <Text style={[styles.radioLabel, selected && styles.radioLabelSelected]}>{opt.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
+            {GIFT_SUB_OPTIONS
+              // Per stirpes is meaningless for a charity — it has no children —
+              // so it is withheld, unless a saved draft already chose it, in
+              // which case it is shown so the screen reflects the will as it
+              // stands and validation is what objects.
+              .filter(opt => opt.value !== 'per-stirpes' || !gift.isCharity || gift.substitutionType === 'per-stirpes')
+              .map(opt => {
+                const selected = gift.substitutionType === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.radioOption, selected && styles.radioOptionSelected]}
+                    onPress={() => updateGift(gift.id, { substitutionType: opt.value })}
+                  >
+                    <View style={[styles.radioCircle, selected && styles.radioCircleSelected]}>
+                      {selected && <View style={styles.radioInner} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.radioLabel, selected && styles.radioLabelSelected]}>{opt.label}</Text>
+                      <Text style={styles.radioDetail}>{opt.detail}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
           </View>
 
           {gift.substitutionType === 'named' && (
             <>
-              <Text style={shared.label}>Alternative recipient</Text>
-              <TextInput
-                style={[shared.input, !gift.substitutionRecipient.trim() ? styles.inputError : null]}
-                placeholder="Full name or charity name"
-                value={gift.substitutionRecipient}
-                onChangeText={v => updateGift(gift.id, { substitutionRecipient: v })}
-                autoCapitalize="words"
-              />
-              {!gift.substitutionRecipient.trim() ? (
+              {gift.substitutionRecipients.map(s => (
+                <View key={s.id} style={styles.subCard}>
+                  <View style={styles.subRow}>
+                    <TextInput
+                      style={[shared.input, { flex: 1 }, !s.name.trim() ? styles.inputError : null]}
+                      placeholder="Full name or charity name"
+                      value={s.name}
+                      onChangeText={v => updateGiftSub(gift, s.id, { name: v })}
+                      autoCapitalize="words"
+                    />
+                    <TouchableOpacity style={styles.subRemove} onPress={() => removeGiftSub(gift, s.id)}>
+                      <Text style={shared.dangerBtnText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {/* Optional. A substitute may never inherit, so the gift is not
+                      blocked over their address — but a bare name is a search,
+                      and executors are the ones who run it. */}
+                  <TextInput
+                    style={[shared.input, shared.inputMulti]}
+                    placeholder="Their address (optional — helps your executors identify them)"
+                    value={s.address}
+                    onChangeText={v => updateGiftSub(gift, s.id, { address: v })}
+                    multiline
+                    numberOfLines={2}
+                  />
+                </View>
+              ))}
+
+              {gift.substitutionRecipients.some(s => !s.name.trim()) ? (
                 <Text style={styles.errorText}>
-                  Name the alternative recipient, or choose "falls into the residuary estate" above.
+                  Name each alternative recipient, or remove the row.
                 </Text>
+              ) : null}
+              {gift.substitutionRecipients.length === 0 ? (
+                <Text style={styles.errorText}>
+                  Add an alternative recipient, or choose "falls into the residuary estate" above.
+                </Text>
+              ) : null}
+
+              <View style={styles.chipRow}>
+                {known
+                  .filter(p => !gift.substitutionRecipients.some(s => s.name.trim().toLowerCase() === p.name.trim().toLowerCase()))
+                  .map(p => (
+                    <TouchableOpacity key={p.ref} style={styles.chip} onPress={() => addGiftSub(gift, p.name)}>
+                      <Text style={styles.chipText}>+ {p.name}</Text>
+                      <Text style={styles.chipRel}>{p.relationship}</Text>
+                    </TouchableOpacity>
+                  ))}
+                <TouchableOpacity style={styles.chip} onPress={() => addGiftSub(gift, '')}>
+                  <Text style={styles.chipText}>+ Someone else</Text>
+                </TouchableOpacity>
+              </View>
+
+              {gift.substitutionRecipients.length > 0 ? (
+                <>
+                  <Text style={[shared.label, { marginTop: 14 }]}>
+                    {gift.substitutionRecipients.length > 1
+                      ? 'If one of these people dies before you too'
+                      : `If ${gift.substitutionRecipients[0].name.trim() || 'this person'} dies before you too`}
+                  </Text>
+                  <View style={styles.radioGroup}>
+                    {GIFT_FALLBACK_OPTIONS.map(opt => {
+                      const selected = gift.substitutionFallback === opt.value;
+                      return (
+                        <TouchableOpacity
+                          key={opt.value}
+                          style={[styles.radioOption, selected && styles.radioOptionSelected]}
+                          onPress={() => updateGift(gift.id, { substitutionFallback: opt.value })}
+                        >
+                          <View style={[styles.radioCircle, selected && styles.radioCircleSelected]}>
+                            {selected && <View style={styles.radioInner} />}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.radioLabel, selected && styles.radioLabelSelected]}>{opt.label}</Text>
+                            <Text style={styles.radioDetail}>{opt.detail}</Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
               ) : null}
             </>
           )}
@@ -321,5 +462,52 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 18,
     color: '#6B5216',
+  },
+  subCard: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+    gap: 8,
+  },
+  subRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  subRemove: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: C.primary,
+    backgroundColor: '#EEF2FA',
+  },
+  chipText: {
+    fontSize: 13.5,
+    color: C.primary,
+    fontWeight: '600',
+  },
+  chipRel: {
+    fontSize: 11.5,
+    color: C.textLight,
   },
 });

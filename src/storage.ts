@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   WillData, EMPTY_WILL, Beneficiary, BeneficiarySubstitution, Guardian, SpecificGift,
-  Substitute, SubstitutionType, Child, Executor,
+  GiftSubstitute, GiftSubstitutionType, Substitute, SubstitutionType, Child, Executor,
 } from './types';
 
 const DOCS_KEY = 'willWriter.docs.v1';
@@ -193,6 +193,48 @@ function normalizeBeneficiary(b: any): Beneficiary {
 }
 
 function normalizeGift(g: any): SpecificGift {
+  // A legacy free-text alternative, from a build before the gift's substitute
+  // was a list.
+  const legacyRecipient = typeof g.substitutionRecipient === 'string' && g.substitutionRecipient.trim() !== '';
+
+  // Whitelisted: only the explicit known values count. 'per-stirpes' and 'named'
+  // survive; everything else falls to 'residue'. Unlike a beneficiary share —
+  // where the default (per-stirpes) silently rerouted to issue, so an unknown
+  // type with a legacy name had to be promoted to 'named' to preserve intent —
+  // a gift's default is residue, which loses nothing: the gift simply stays in
+  // the estate. So there is no promotion to make here, and the safe default is
+  // genuinely safe.
+  const substitutionType: GiftSubstitutionType =
+    g.substitutionType === 'named' || g.substitutionType === 'per-stirpes'
+      ? g.substitutionType
+      : 'residue';
+
+  // Whitelisted like the residuary fallback: only the explicit new value counts,
+  // everything else lands on 'survivors' — what the clause did before there was
+  // a choice — so reopening an old gift cannot quietly reroute an alternative's
+  // part to children the testator never named.
+  const substitutionFallback = g.substitutionFallback === 'issue' ? 'issue' as const : 'survivors' as const;
+
+  // The list of named alternatives, from a build that has one. Typed at every
+  // field because these concatenate straight into a sentence of the will.
+  let substitutionRecipients: GiftSubstitute[] = [];
+  if (Array.isArray(g.substitutionRecipients)) {
+    substitutionRecipients = g.substitutionRecipients
+      .filter((s: any) => s && typeof s === 'object')
+      .map((s: any) => ({
+        id: typeof s.id === 'string' && s.id ? s.id : Math.random().toString(36).slice(2),
+        name: str(s.name),
+        address: str(s.address),
+      }));
+  }
+  // A draft saved before the alternative was a list migrates its single
+  // free-text name to a one-entry list — unparsed, exactly as typed — the same
+  // way a residuary namedPerson does. An empty list with a legacy name present
+  // still finds the name rather than reopening as an inoperative list.
+  if (substitutionRecipients.length === 0 && legacyRecipient) {
+    substitutionRecipients = [{ id: Math.random().toString(36).slice(2), name: g.substitutionRecipient, address: '' }];
+  }
+
   return {
     id: typeof g.id === 'string' && g.id ? g.id : Math.random().toString(36).slice(2),
     recipient: str(g.recipient),
@@ -202,12 +244,9 @@ function normalizeGift(g: any): SpecificGift {
     // hardcoded onto every gift. They reopen on the safer default instead, and
     // the user is shown the choice on the Specific Gifts screen.
     taxBurden: g.taxBurden === 'freeOfTax' ? 'freeOfTax' : 'bearsOwnTax',
-    // Whitelisted like the beneficiary path: an unknown type used to fall to
-    // 'residue' by || while KEEPING the unknown string was the beneficiary
-    // bug; here `|| 'residue'` kept whatever arrived and the clause switch
-    // silently ignored the named recipient.
-    substitutionType: g.substitutionType === 'named' ? 'named' : 'residue',
-    substitutionRecipient: str(g.substitutionRecipient),
+    substitutionType,
+    substitutionRecipients,
+    substitutionFallback,
   };
 }
 

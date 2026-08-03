@@ -62,7 +62,18 @@ export interface Guardian {
  * people it applies to are told plainly, and nobody else is stopped.
  */
 
-export type GiftSubstitutionType = 'residue' | 'named';
+/**
+ * Where a specific gift goes if its recipient dies before the testator.
+ *
+ * 'residue'     — it falls into and forms part of the residuary estate (default).
+ * 'named'       — it passes to one or more named people, who take JOINTLY. A
+ *                 specific gift is usually one indivisible thing, so — unlike a
+ *                 residuary share — the alternatives are not given percentages;
+ *                 they share the gift between them.
+ * 'per-stirpes' — it passes to the recipient's own children, then down to their
+ *                 issue (Wills Act 1837 s.33 machinery, stated expressly).
+ */
+export type GiftSubstitutionType = 'residue' | 'named' | 'per-stirpes';
 
 /**
  * Who bears the inheritance tax attributable to a specific gift.
@@ -78,6 +89,19 @@ export type GiftSubstitutionType = 'residue' | 'named';
  */
 export type GiftTaxBurden = 'bearsOwnTax' | 'freeOfTax';
 
+/**
+ * One alternative recipient of a specific gift. Mirrors {@link Substitute} minus
+ * `share`: named alternatives to a specific gift take it JOINTLY, not in
+ * percentages, because the gift is usually one indivisible thing. `address` is
+ * the same cheap disambiguator it is everywhere else, and optional for the same
+ * reason — the substitution may never operate.
+ */
+export interface GiftSubstitute {
+  id: string;
+  name: string;
+  address: string;
+}
+
 export interface SpecificGift {
   id: string;
   recipient: string;
@@ -85,7 +109,22 @@ export interface SpecificGift {
   isCharity: boolean;
   taxBurden: GiftTaxBurden;
   substitutionType: GiftSubstitutionType;
-  substitutionRecipient: string;
+
+  /**
+   * The named alternatives, used only when `substitutionType === 'named'`. They
+   * take the gift jointly. Replaces the old single `substitutionRecipient`
+   * string, which is migrated into a one-entry list on load.
+   */
+  substitutionRecipients: GiftSubstitute[];
+
+  /**
+   * Where a named alternative's part goes if that alternative ALSO dies first —
+   * to the other alternatives then into residue ('survivors'), or to that
+   * alternative's own children ('issue'). Same semantics as a residuary
+   * substitute's fallback; defaults to 'survivors', which is what the clause
+   * always did.
+   */
+  substitutionFallback: NamedSubstituteFallback;
 }
 
 /**

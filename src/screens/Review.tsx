@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
-import { WillData, Beneficiary, SubstitutionType } from '../types';
+import { WillData, Beneficiary, SubstitutionType, SpecificGift } from '../types';
 import { hasMinorChildren } from '../family';
 import { C, shared } from './shared';
 import { notify, deliverPdf } from '../platform';
@@ -52,6 +52,24 @@ function shareLabel(raw: string): string {
   const value = parsePercentage(raw);
   if (value !== null) return formatPercentage(value);
   return raw.trim() ? `${raw.trim()} — not a valid share` : 'no share set';
+}
+
+// One line summarising where a gift goes if its recipient dies first, matching
+// the three options on the Specific Gifts screen. Named alternatives take
+// jointly, so they are listed rather than apportioned.
+function giftSubstitutionSummary(g: SpecificGift): string {
+  if (g.substitutionType === 'per-stirpes') {
+    return `Passes to ${g.recipient.trim() || 'the recipient'}’s children (per stirpes)`;
+  }
+  if (g.substitutionType === 'named') {
+    const names = g.substitutionRecipients.map(s => s.name.trim()).filter(Boolean);
+    if (names.length === 0) return 'Passes to someone else (not yet named)';
+    const joined = names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} (jointly)`;
+    return `Passes to ${joined}`;
+  }
+  return 'Falls into residuary estate';
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -354,9 +372,7 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
               )}
               <Row
                 label="If recipient dies"
-                value={g.substitutionType === 'named'
-                  ? `Passes to ${g.substitutionRecipient || '(not yet named)'}`
-                  : 'Falls into residuary estate'}
+                value={giftSubstitutionSummary(g)}
               />
             </View>
           ))

@@ -46,6 +46,14 @@ function ben(id, name, relationship, percentage, opts = {}) {
 }
 
 function gift(id, recipient, description, opts = {}) {
+  // Accepts either the new list (opts.substitutionRecipients: [{name, address}])
+  // or the legacy single string (opts.substitutionRecipient), which migrates to
+  // a one-entry list — the same shape storage.normalizeGift produces on load.
+  const recipients = Array.isArray(opts.substitutionRecipients)
+    ? opts.substitutionRecipients.map((s, i) => ({ id: s.id || `${id}-sub${i}`, name: s.name || '', address: s.address || '' }))
+    : (opts.substitutionRecipient
+        ? [{ id: `${id}-sub0`, name: opts.substitutionRecipient, address: opts.substitutionRecipientAddress || '' }]
+        : []);
   return {
     id,
     recipient,
@@ -53,7 +61,8 @@ function gift(id, recipient, description, opts = {}) {
     isCharity: opts.isCharity || false,
     taxBurden: opts.taxBurden || 'bearsOwnTax',
     substitutionType: opts.substitutionType || 'residue',
-    substitutionRecipient: opts.substitutionRecipient || '',
+    substitutionRecipients: recipients,
+    substitutionFallback: opts.substitutionFallback || 'survivors',
   };
 }
 
@@ -921,6 +930,47 @@ const giftSubstituteSelf = {
   ],
 };
 
+// A specific gift whose alternative is the recipient's own children (per
+// stirpes), then residue. Mirrors the residuary per-stirpes option.
+const giftPerStirpes = {
+  ...clone(baseline),
+  specificGifts: [
+    gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar', {
+      substitutionType: 'per-stirpes',
+    }),
+  ],
+};
+
+// Two named alternatives who take a single gift JOINTLY (no apportionment),
+// with the second carrying an address. If one goes first the other takes the
+// whole; if none survive it falls into residue.
+const giftJointNamed = {
+  ...clone(baseline),
+  specificGifts: [
+    gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar', {
+      substitutionType: 'named',
+      substitutionFallback: 'survivors',
+      substitutionRecipients: [
+        { name: 'Amelia Smith' },
+        { name: 'Bob Jones', address: '4 Elm Road, Leeds, LS1 2AB' },
+      ],
+    }),
+  ],
+};
+
+// A single named alternative whose own part passes to their children if they
+// die too (the 'issue' fallback), then residue.
+const giftNamedIssue = {
+  ...clone(baseline),
+  specificGifts: [
+    gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar', {
+      substitutionType: 'named',
+      substitutionFallback: 'issue',
+      substitutionRecipients: [{ name: 'Amelia Smith' }],
+    }),
+  ],
+};
+
 // A residuary substitute who is the beneficiary they stand behind.
 const residuarySelfSubstitute = {
   ...clone(baseline),
@@ -1027,6 +1077,9 @@ module.exports = {
   'guardian-unnamed': guardianUnnamed,
   'child-dob-garbage': childDobGarbage,
   'gift-substitute-self': giftSubstituteSelf,
+  'gift-per-stirpes': giftPerStirpes,
+  'gift-joint-named': giftJointNamed,
+  'gift-named-issue': giftNamedIssue,
   'residuary-self-substitute': residuarySelfSubstitute,
   'long-unbroken-name': longUnbrokenName,
 };

@@ -93,7 +93,9 @@ function namedFields(data: WillData): Array<{ step: StepKey; label: string; valu
   data.specificGifts.forEach(gift => {
     fields.push({ step: 'gifts', label: `the recipient "${gift.recipient}"`, value: gift.recipient });
     fields.push({ step: 'gifts', label: `the gift "${gift.description}"`, value: gift.description });
-    fields.push({ step: 'gifts', label: `the substitute for "${gift.recipient}"`, value: gift.substitutionRecipient });
+    gift.substitutionRecipients.forEach(s => {
+      fields.push({ step: 'gifts', label: `the alternative recipient "${s.name}" for "${gift.recipient}"`, value: s.name });
+    });
   });
   data.beneficiaries.forEach(b => {
     fields.push({ step: 'residuary', label: `the beneficiary "${b.name}"`, value: b.name });
@@ -440,22 +442,24 @@ export function blockingProblems(data: WillData): WillProblem[] {
         message: 'A specific gift is missing either the item or who receives it.',
       });
     }
-    if (gift.substitutionType === 'named' && !gift.substitutionRecipient.trim()) {
+    if (gift.substitutionType === 'named' && !gift.substitutionRecipients.some(s => s.name.trim())) {
       problems.push({
         step: 'gifts',
-        message: `You chose a named substitute for the gift to ${gift.recipient.trim() || 'a recipient'} but did not say who.`,
+        message: `You chose a named alternative for the gift to ${gift.recipient.trim() || 'a recipient'} but did not say who.`,
       });
     }
     // "If Rita fails to survive me, this gift shall pass to Rita" — a clause
-    // that reads as complete and does nothing at all.
-    if (
-      gift.substitutionType === 'named' &&
-      gift.substitutionRecipient.trim() &&
-      gift.substitutionRecipient.trim().toLowerCase() === gift.recipient.trim().toLowerCase()
-    ) {
-      problems.push({
-        step: 'gifts',
-        message: `The substitute for the gift to ${gift.recipient.trim()} is the same person as the recipient. Name someone else, or let the gift fall into your residuary estate.`,
+    // that reads as complete and does nothing at all. Checked against every
+    // named alternative, since any one of them being the recipient is the same
+    // inoperative loop.
+    if (gift.substitutionType === 'named') {
+      gift.substitutionRecipients.forEach(s => {
+        if (s.name.trim() && s.name.trim().toLowerCase() === gift.recipient.trim().toLowerCase()) {
+          problems.push({
+            step: 'gifts',
+            message: `An alternative for the gift to ${gift.recipient.trim()} is the same person as the recipient. Name someone else, or let the gift fall into your residuary estate.`,
+          });
+        }
       });
     }
   });
@@ -732,7 +736,7 @@ export function warnings(data: WillData): WillProblem[] {
       ...data.beneficiaries.map(b => b.name),
       ...data.beneficiaries.flatMap(b => b.substitution.substitutes.map(s => s.name)),
       ...data.specificGifts.map(g => g.recipient),
-      ...data.specificGifts.map(g => g.substitutionRecipient),
+      ...data.specificGifts.flatMap(g => g.substitutionRecipients.map(s => s.name)),
     ].map(name => name.trim().toLowerCase()).filter(Boolean),
   );
 

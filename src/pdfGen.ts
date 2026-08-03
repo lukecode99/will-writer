@@ -724,17 +724,84 @@ export async function generateWillPdf(
         ? `If ${recipient} shall have ceased to exist or amalgamated with another charity or body at my death`
         : `If ${recipient} shall fail to survive me by 30 days`;
 
+      // The named alternatives, read from the list. A fixture or a draft saved
+      // under the old single free-text field is read through the legacy field so
+      // it still drafts, exactly as the residuary path tolerates a namedPerson.
+      const giftSubs: { name: string; address?: string }[] =
+        Array.isArray((gift as any).substitutionRecipients) && (gift as any).substitutionRecipients.length > 0
+          ? (gift as any).substitutionRecipients
+          : (typeof (gift as any).substitutionRecipient === 'string' && (gift as any).substitutionRecipient.trim()
+              ? [{ name: (gift as any).substitutionRecipient, address: '' }]
+              : []);
+      const giftFallback = (gift as any).substitutionFallback === 'issue' ? 'issue' : 'survivors';
+
+      // The address rides with the first mention of a name only, as everywhere
+      // else in the will — identify once, refer back after.
+      const identifyGiftSub = (s: { name: string; address?: string }): string =>
+        field(s.name, 'alternative recipient name missing') +
+        (typeof s.address === 'string' && s.address.trim() ? ` of ${inlineAddress(s.address)}` : '');
+      const listNames = (arr: string[]): string =>
+        arr.length <= 1 ? (arr[0] || '') : `${arr.slice(0, -1).join(', ')} and ${arr[arr.length - 1]}`;
+
       let failClause: string;
-      if (gift.substitutionType === 'named') {
-        // The substitute takes on the same 30-day condition as every other
-        // taker, and the gift has somewhere to go if the substitute has also
-        // died — without that limb it lapsed into residue by silence rather
-        // than by words.
-        const sub = field(gift.substitutionRecipient, 'alternative recipient name missing');
+      if (gift.substitutionType === 'per-stirpes') {
+        // To the recipient's own children, then down to their issue — the same
+        // double-limb (died in my lifetime OR failed to survive me by 30 days)
+        // as the residuary per-stirpes clause, so a child who outlives me but
+        // dies inside the window still passes their branch down. The ultimate
+        // limb here is residue, not the other beneficiaries: a gift that fails
+        // all the way through has always fallen into the estate.
+        const rPoss = `${recipient}'s`;
         failClause =
-          `${failTrigger}, this gift shall pass to ${sub}, provided that ${sub} survives me by ` +
-          `30 days; and if ${sub} shall not so survive me, this gift shall fall into and form ` +
-          `part of my residuary estate.`;
+          `${failTrigger}, this gift shall pass in equal shares to such of ${rPoss} children as shall ` +
+          `survive me by 30 days; if any child of ${recipient} shall have died in my lifetime or failed ` +
+          `to survive me by 30 days, leaving children of their own living at my death, those ` +
+          `grandchildren shall take their parent's share equally between them (per stirpes); and if no ` +
+          `child or issue of ${recipient} shall so survive me, this gift shall fall into and form part ` +
+          `of my residuary estate.`;
+      } else if (gift.substitutionType === 'named') {
+        // The alternatives take on the same 30-day condition as every other
+        // taker, and the gift has somewhere to go if an alternative has also
+        // died — without that limb it lapsed into residue by silence rather than
+        // by words. A specific gift is usually one indivisible thing, so named
+        // alternatives take it JOINTLY: no apportionment, and if one goes first
+        // the others take the whole between them before residue is reached.
+        const takers = giftSubs.length > 0 ? giftSubs : [{ name: '', address: '' }];
+        if (takers.length === 1) {
+          const only = identifyGiftSub(takers[0]);
+          const onlyName = field(takers[0].name, 'alternative recipient name missing');
+          if (giftFallback === 'issue') {
+            failClause =
+              `${failTrigger}, this gift shall pass to ${only}, provided that ${onlyName} survives me by ` +
+              `30 days. If ${onlyName} shall have died in my lifetime or failed to survive me by 30 days, ` +
+              `leaving children living at my death, those children shall take this gift equally between ` +
+              `them (per stirpes); and if ${onlyName} shall not so survive me and shall leave no such ` +
+              `children, this gift shall fall into and form part of my residuary estate.`;
+          } else {
+            failClause =
+              `${failTrigger}, this gift shall pass to ${only}, provided that ${onlyName} survives me by ` +
+              `30 days; and if ${onlyName} shall not so survive me, this gift shall fall into and form ` +
+              `part of my residuary estate.`;
+          }
+        } else {
+          const joined = listNames(takers.map(identifyGiftSub));
+          if (giftFallback === 'issue') {
+            failClause =
+              `${failTrigger}, this gift shall pass to ${joined} jointly, provided in each case that the ` +
+              `taker survives me by 30 days. If any of them shall have died in my lifetime or failed to ` +
+              `survive me by 30 days, leaving children living at my death, those children shall take that ` +
+              `person's share equally between them (per stirpes); if any of them shall so fail to survive ` +
+              `me leaving no such children, that person's share shall pass to such of the others of them ` +
+              `as shall so survive me; and if this gift passes to none of them under the foregoing ` +
+              `provisions, it shall fall into and form part of my residuary estate.`;
+          } else {
+            failClause =
+              `${failTrigger}, this gift shall pass to ${joined} jointly, provided in each case that the ` +
+              `taker survives me by 30 days; if any of them shall fail to survive me by 30 days, this gift ` +
+              `shall pass to such of them as shall so survive me; and if none of them shall so survive me, ` +
+              `this gift shall fall into and form part of my residuary estate.`;
+          }
+        }
       } else {
         failClause = `${failTrigger}, this gift shall fall into and form part of my residuary estate.`;
       }

@@ -1096,6 +1096,51 @@ const RAW = {
     mustContain: ['DRAFT — DO NOT SIGN'],
   },
 
+  /** A gift over to the recipient's own children, per stirpes, then residue. */
+  'gift-per-stirpes': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays(
+        "shall pass in equal shares to such of Michael Doyle's children as shall survive me by 30 days",
+        "those grandchildren shall take their parent's share equally between them (per stirpes)",
+        'if no child or issue of Michael Doyle shall so survive me, this gift shall fall into and form part of my residuary estate',
+      ),
+    ),
+  },
+
+  /** Two named alternatives taking one gift jointly, then residue. */
+  'gift-joint-named': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays(
+        'this gift shall pass to Amelia Smith and Bob Jones of 4 Elm Road, Leeds, LS1 2AB jointly',
+        'if any of them shall fail to survive me by 30 days, this gift shall pass to such of them as shall so survive me',
+        'if none of them shall so survive me, this gift shall fall into and form part of my residuary estate',
+      ),
+      // The address rides the first mention only — it must not repeat.
+      ({ shown }) => (flatten(shown).match(/4 Elm Road, Leeds, LS1 2AB/g) || []).length > 1
+        ? ['the substitute address repeats on a later mention'] : [],
+    ),
+  },
+
+  /** One named alternative whose part passes to their own children, then residue. */
+  'gift-named-issue': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays(
+        'this gift shall pass to Amelia Smith, provided that Amelia Smith survives me by 30 days',
+        'those children shall take this gift equally between them (per stirpes)',
+        'and if Amelia Smith shall not so survive me and shall leave no such children, this gift shall fall into and form part of my residuary estate',
+      ),
+    ),
+  },
+
   /** The residuary version of the same nothing-clause. */
   'residuary-self-substitute': {
     verdict: 'REFUSED',

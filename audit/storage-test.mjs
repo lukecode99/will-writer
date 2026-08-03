@@ -516,8 +516,12 @@ await test('gift substitution fields are whitelisted and typed', async () => {
   check('an unrecognised gift substitution type falls back to residue',
     g1.substitutionType === 'residue', `got ${JSON.stringify(g1.substitutionType)}`);
   check('a recognised type survives', g2.substitutionType === 'named');
-  check('a non-string recipient is blanked, not concatenated into the will',
-    g2.substitutionRecipient === '');
+  check('a legacy free-text recipient migrates to a one-entry alternatives list',
+    g1.substitutionRecipients.length === 1 && g1.substitutionRecipients[0].name === 'Bob Doyle',
+    `got ${JSON.stringify(g1.substitutionRecipients)}`);
+  check('a non-string recipient is dropped, not concatenated into the will',
+    Array.isArray(g2.substitutionRecipients) && g2.substitutionRecipients.length === 0,
+    `got ${JSON.stringify(g2.substitutionRecipients)}`);
 });
 
 /**
