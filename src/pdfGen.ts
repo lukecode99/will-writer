@@ -206,7 +206,7 @@ function substitutionClause(b: Beneficiary): string {
   // wills reach here from disk, and `normalizeSubstitution` is the only thing
   // between a JSON file written by some other build and this function. A missing
   // array would throw halfway through generating a document.
-  const raw = b.substitution || { type: 'per-stirpes' as const, substitutes: [], namedFallback: 'survivors' as const };
+  const raw = b.substitution || { type: 'unchosen' as const, substitutes: [], namedFallback: 'survivors' as const };
   const sub = {
     type: raw.type,
     substitutes: Array.isArray(raw.substitutes) ? raw.substitutes : [],
@@ -217,6 +217,19 @@ function substitutionClause(b: Beneficiary): string {
   };
   const name = field(b.name, 'beneficiary name missing');
   const namePoss = `${name}'s`;
+
+  // No substitution has been chosen. This can only reach a PDF on the draft
+  // path — blockingProblems refuses to finalise a will while any share is still
+  // 'unchosen' — so a bracketed marker is drawn rather than a clause, making the
+  // gap unmistakable on a DRAFT preview instead of silently disposing of the
+  // share on a branch the user never picked.
+  if (sub.type === 'unchosen') {
+    return (
+      `[NO SUBSTITUTION CHOSEN for ${name}. You have not said what happens to ${namePoss} share ` +
+      `if ${name} dies before you. This will cannot be finalised until you choose on the ` +
+      `Residuary Estate screen.]`
+    );
+  }
 
   // The event that takes this beneficiary out of the gift. A person fails to
   // survive; a charity ceases to exist or amalgamates. Writing family
@@ -841,6 +854,14 @@ export async function generateWillPdf(
               `this gift shall fall into and form part of my residuary estate.`;
           }
         }
+      } else if (gift.substitutionType === 'unchosen') {
+        // No choice made. Reachable only on the draft path — blockingProblems
+        // refuses to finalise a will with an unchosen gift — so a bracketed
+        // marker is drawn rather than silently letting the gift fall into
+        // residue, a destination the user never actually picked.
+        failClause =
+          `[NO CHOICE MADE for what happens to this gift if ${recipBareLabel} does not survive you. ` +
+          `This will cannot be finalised until you choose on the Specific Gifts screen.]`;
       } else {
         failClause = `${failTrigger}, this gift shall fall into and form part of my residuary estate.`;
       }

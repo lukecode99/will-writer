@@ -317,6 +317,19 @@ export function blockingProblems(data: WillData): WillProblem[] {
     }
 
     data.beneficiaries.forEach(b => {
+      // No choice made about what happens if this beneficiary dies before the
+      // testator. A new beneficiary starts here (see SubstitutionType) and the
+      // app no longer guesses on the user's behalf, so a will cannot be finished
+      // while a share still has no destination on that branch. Gated on a name
+      // so a blank scaffold row is flagged by the unnamed-beneficiary check
+      // above rather than nagged about twice; either way generation is blocked.
+      if (b.substitution.type === 'unchosen' && b.name.trim()) {
+        problems.push({
+          step: 'residuary',
+          message: `You have not chosen what happens to ${b.name.trim()}'s share if ${b.name.trim()} dies before you. Pick an option on the Residuary Estate screen.`,
+        });
+      }
+
       // Named substitutes: who they are, and how much each of them takes.
       //
       // All three checks below block rather than warn, and for the same reason
@@ -463,6 +476,18 @@ export function blockingProblems(data: WillData): WillProblem[] {
       problems.push({
         step: 'gifts',
         message: 'A specific gift is missing either the item or who receives it.',
+      });
+    }
+    // No choice made about what happens if the recipient dies before the
+    // testator. A new gift starts here (see GiftSubstitutionType) and the app no
+    // longer quietly assumes the gift falls into residue, so the will cannot be
+    // finished until the user says where it goes — even if that is residue.
+    // Only raised once the gift is a real one; an empty gift row is caught by
+    // the missing-item/recipient check above.
+    if (gift.substitutionType === 'unchosen' && namedRecipients.length > 0 && gift.description.trim()) {
+      problems.push({
+        step: 'gifts',
+        message: `You have not chosen what happens to the gift to ${giftLabel} if ${namedRecipients.length > 1 ? 'none of them survive' : 'they do not survive'} you. Pick an option on the Specific Gifts screen.`,
       });
     }
     // "Their own children take it" has one referent only when there is one

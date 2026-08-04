@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
 import { WillData, Beneficiary, NamedSubstituteFallback, Substitute, SubstitutionType } from '../types';
 import { blockingProblems, minorFlagWarning, parsePercentage, percentageTotal } from '../validation';
-import { KnownPerson, defaultSubstitutionType, knownPeople, knownRefs } from '../people';
+import { KnownPerson, knownPeople, knownRefs } from '../people';
 import { C, shared } from './shared';
 import { notify, confirmDestructive } from '../platform';
 
@@ -79,6 +79,11 @@ function previewText(b: Beneficiary, data: WillData): string {
     : `If ${name} dies before you`;
   const sub = b.substitution;
   switch (sub.type) {
+    case 'unchosen':
+      // No guess is offered. The screen shows nothing selected and this line
+      // says why, so the gap reads as a question still to answer rather than a
+      // choice already made. Validation blocks Continue until one is picked.
+      return `Not yet chosen. Pick what happens to ${name}'s ${pct}share if ${name} dies before you.`;
     case 'own-children':
       // Says "including any child born after you sign" out loud. It is the one
       // property of a class gift nobody expects a form to have, and the reason
@@ -241,8 +246,11 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           isOwnChild: person ? person.isOwnChild : false,
           isMinor: false,
           isCharity: false,
+          // Starts unselected on purpose: the app no longer guesses what happens
+          // if this beneficiary dies first. Nothing is pre-selected below, and
+          // validation blocks Continue until the user chooses (see types.ts).
           substitution: {
-            type: defaultSubstitutionType(person ? person.isOwnChild : false, data),
+            type: 'unchosen',
             substitutes: [],
             namedFallback: 'survivors',
           },
@@ -552,7 +560,11 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
               ? `If ${b.name || 'this charity'} no longer exists when you die`
               : `If ${b.name || 'this person'} dies before you`}
           </Text>
-          <Text style={shared.hint}>Choose what happens to their share.</Text>
+          <Text style={[shared.hint, b.substitution.type === 'unchosen' && styles.hintRequired]}>
+            {b.substitution.type === 'unchosen'
+              ? 'Required — choose one. Your will cannot be finished until you say what happens to their share.'
+              : 'Choose what happens to their share.'}
+          </Text>
 
           <View style={styles.radioGroup}>
             {subOptions(b, data).map(opt => {
@@ -868,6 +880,10 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: C.danger,
+  },
+  hintRequired: {
+    color: C.danger,
+    fontWeight: '600',
   },
   subBlock: {
     marginBottom: 10,

@@ -472,6 +472,36 @@ const proRataSole = {
   ],
 };
 
+// ------------------------------------ residuary substitution left unchosen
+//
+// A new beneficiary starts with no answer to "what happens if they die before
+// you?" — the app no longer guesses one. Nothing is pre-selected on the screen,
+// and the will cannot be finalised while the share still has no destination on
+// that branch. Here the wife's share is left 'unchosen'; the other two are set.
+// Must be refused, and the draft must mark the gap rather than dispose of the
+// share silently.
+const residuarySubUnchosen = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '50', {
+      substitution: { type: 'unchosen', substitutes: [] },
+    }),
+    ben('b2', 'Oliver Smith', 'son', '30', { isOwnChild: true }),
+    ben('b3', 'Amelia Smith', 'daughter', '20', { isOwnChild: true }),
+  ],
+};
+
+// ----------------------------------------- gift substitution left unchosen
+//
+// The same rule for a specific gift: a new gift no longer quietly assumes it
+// falls into residue if the recipient dies first. The user must say where it
+// goes — even if that is residue. Here the guitar's substitution is 'unchosen'.
+// Must be refused, and the draft must mark the gap.
+const giftSubUnchosen = {
+  ...clone(baseline),
+  specificGifts: [gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar', { substitutionType: 'unchosen' })],
+};
+
 // ----------------------------------------- "everything to my wife, then the kids"
 //
 // The commonest will in England and Wales, and until now the one shape this app
@@ -1143,4 +1173,9 @@ module.exports = {
 
   // round 7 — invalid substitution options greyed out on both screens (04-Aug-2026)
   'pro-rata-sole': proRataSole,
+
+  // round 8 — no silent defaults: a substitution left unchosen blocks the will
+  // on both the residuary and gifts screens (05-Aug-2026)
+  'residuary-substitution-unchosen': residuarySubUnchosen,
+  'gift-substitution-unchosen': giftSubUnchosen,
 };

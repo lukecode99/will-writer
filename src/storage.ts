@@ -57,7 +57,7 @@ function newId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const SUBSTITUTION_TYPES: SubstitutionType[] = ['per-stirpes', 'named', 'pro-rata', 'own-children'];
+const SUBSTITUTION_TYPES: SubstitutionType[] = ['unchosen', 'per-stirpes', 'named', 'pro-rata', 'own-children'];
 const MARITAL_STATUSES = ['single', 'married', 'civilPartnership', 'divorced', 'widowed'];
 const BURIAL_PREFERENCES = ['burial', 'cremation', 'noPreference'];
 
@@ -97,11 +97,14 @@ function asObjectArray(value: any): any[] {
  * review screen to say so. The one failure this app cannot afford is the silent
  * one, because the document looks finished either way.
  *
- * Per stirpes is the right thing to land on because it is what a new
- * beneficiary starts as, so the fallback is the app's own default rather than a
- * choice made quietly on the user's behalf. It is still a changed provision,
- * but a visible one: it shows on the residuary screen and in the preview, where
- * it can be seen and put back.
+ * 'unchosen' is the right thing to land on because it is what a new beneficiary
+ * starts as, so the fallback is not a choice made quietly on the user's behalf —
+ * it is no choice at all, made visible. The share shows as unselected on the
+ * residuary screen and `blockingProblems` refuses to finalise the will until the
+ * user picks, so reopening an old draft cannot silently reroute a share to the
+ * beneficiary's issue (which is what the previous 'per-stirpes' fallback did).
+ * The one exception below is a legacy namedPerson, which is a choice the user
+ * plainly did make and so is honoured rather than reset.
  */
 function normalizeSubstitution(sub: any): BeneficiarySubstitution {
   // When the stored type is unrecognisable but a legacy namedPerson is there,
@@ -112,7 +115,7 @@ function normalizeSubstitution(sub: any): BeneficiarySubstitution {
   const legacyNamed = typeof sub?.namedPerson === 'string' && sub.namedPerson.trim() !== '';
   const type: SubstitutionType = SUBSTITUTION_TYPES.includes(sub?.type)
     ? sub.type
-    : legacyNamed ? 'named' : 'per-stirpes';
+    : legacyNamed ? 'named' : 'unchosen';
 
   // Whitelisted like the type: only the explicit new value counts. Every draft
   // saved before the field existed — and any corrupted value — lands on
@@ -201,17 +204,18 @@ function normalizeGift(g: any): SpecificGift {
   // given to several people jointly.
   const legacyPrimary = typeof g.recipient === 'string' && g.recipient.trim() !== '';
 
-  // Whitelisted: only the explicit known values count. 'per-stirpes' and 'named'
-  // survive; everything else falls to 'residue'. Unlike a beneficiary share —
-  // where the default (per-stirpes) silently rerouted to issue, so an unknown
-  // type with a legacy name had to be promoted to 'named' to preserve intent —
-  // a gift's default is residue, which loses nothing: the gift simply stays in
-  // the estate. So there is no promotion to make here, and the safe default is
-  // genuinely safe.
+  // Whitelisted: only the explicit known values count. 'residue', 'named' and
+  // 'per-stirpes' survive; everything else — including a gift saved before the
+  // field existed — falls to 'unchosen', the same no-choice sentinel a new gift
+  // starts on. 'residue' would lose nothing legally (the gift simply stays in
+  // the estate), but it is still a decision about who inherits, and the standing
+  // rule for this app is that no such decision is made quietly on the user's
+  // behalf: `blockingProblems` refuses to finalise the will until the user picks,
+  // even if what they pick is residue.
   const substitutionType: GiftSubstitutionType =
-    g.substitutionType === 'named' || g.substitutionType === 'per-stirpes'
+    g.substitutionType === 'named' || g.substitutionType === 'per-stirpes' || g.substitutionType === 'residue'
       ? g.substitutionType
-      : 'residue';
+      : 'unchosen';
 
   // Whitelisted like the residuary fallback: only the explicit new value counts,
   // everything else lands on 'survivors' — what the clause did before there was

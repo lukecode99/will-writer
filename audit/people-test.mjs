@@ -21,7 +21,7 @@ const ROOT = join(__dirname, '..');
 const require = createRequire(join(ROOT, 'package.json'));
 require('sucrase/register/ts');
 
-const { PARTNER_REF, childRef, defaultSubstitutionType, knownPeople, knownRefs, syncLinkedBeneficiaries } =
+const { PARTNER_REF, childRef, knownPeople, knownRefs, syncLinkedBeneficiaries } =
   require(join(ROOT, 'src/people.ts'));
 const { warnings, blockingProblems } = require(join(ROOT, 'src/validation.ts'));
 const { childrenSummary, formatUkDateInput, parseUkDate } = require(join(ROOT, 'src/family.ts'));
@@ -360,31 +360,12 @@ const messages = data => warnings(data).map(w => w.message).join(' | ');
 
 // --- what a new share's substitute starts as ---------------------------------
 //
-// The substitution is the part of a will people are least likely to go back to,
-// so whatever it defaults to is what most wills will say. It defaults to the
-// answer that is right for most of them.
-
-{
-  const data = family();
-
-  check('a new share for a partner defaults to my children',
-    defaultSubstitutionType(false, data) === 'own-children');
-
-  // A charity or a friend gets the same default, and should: per-stirpes for a
-  // charity is wording that can never operate.
-  check('so does a new share for someone outside the family',
-    defaultSubstitutionType(false, data) === 'own-children');
-
-  // Per-stirpes for my own child already means my grandchildren. 'own-children'
-  // there says they both take and do not take, and is blocked in validation.
-  check('a share for my own child stays on per-stirpes',
-    defaultSubstitutionType(true, data) === 'per-stirpes');
-
-  const childless = family();
-  childless.children = [];
-  check('with no children listed, nothing defaults to a gift to an empty class',
-    defaultSubstitutionType(false, childless) === 'per-stirpes');
-}
+// A new share used to be given a computed default substitution. That was
+// removed: nothing may be chosen on a person's behalf, so a new share now
+// starts on the 'unchosen' sentinel and the screen blocks progression until
+// the user picks. There is therefore no default function left to test here —
+// the behaviour is covered by validation (blocking) and storage (the sentinel
+// survives a reopen) instead.
 
 /**
  * Slashes put into a date as it is typed.

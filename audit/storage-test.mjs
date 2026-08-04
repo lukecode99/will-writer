@@ -225,8 +225,8 @@ await test('field defaults on old drafts', async () => {
   await storage.hydrateStorage();
   const data = storage.loadWillData(storage.listWills()[0].id);
 
-  check('an old beneficiary gets an id and a substitution rule',
-    !!data.beneficiaries[0].id && data.beneficiaries[0].substitution.type === 'per-stirpes');
+  check('an old beneficiary gets an id and starts on the unchosen sentinel',
+    !!data.beneficiaries[0].id && data.beneficiaries[0].substitution.type === 'unchosen');
   check('an old gift defaults to bearing its own tax, which leaves residue intact',
     data.specificGifts[0].taxBurden === 'bearsOwnTax');
   check('an old single-string gift recipient migrates to a one-entry recipients list',
@@ -287,14 +287,16 @@ await test('substitution types the build does not recognise', async () => {
 
   check('a substitution this build understands survives reopening',
     a.substitution.type === 'own-children');
-  // Per stirpes because it is what a new beneficiary starts as, so the fallback
-  // is the app's own default rather than a choice made quietly on someone's
-  // behalf. It is still a changed provision, but a visible one: it shows on the
-  // residuary screen and in the preview, where it can be seen and put back.
+  // The unchosen sentinel, not a real default: reopening cannot invent a
+  // substitution nobody picked, so an unknown type lands on the one state the
+  // app treats as "still needs answering". It is visible and blocking — the
+  // residuary screen shows the required prompt, the preview marks it, and the
+  // will cannot be finalised until someone chooses. That is the opposite of the
+  // silent gap this test exists to catch.
   // (When the unknown type arrives WITH a legacy named person, the intent was
   // plainly "named" and it lands there instead — tested further down.)
-  check('an unrecognised substitution falls back to the default, not to nothing',
-    b.substitution.type === 'per-stirpes');
+  check('an unrecognised substitution falls back to the unchosen sentinel, not to nothing',
+    b.substitution.type === 'unchosen');
   // These values are concatenated straight into a sentence of the will, so a
   // number here becomes a number in the document.
   check('a named person that is not a string is not concatenated into the will',
@@ -496,7 +498,11 @@ await test('string booleans do not become true', async () => {
  * A gift's substitution type is whitelisted the same way a beneficiary's is.
  * `|| 'residue'` kept whatever string arrived, and the clause switch silently
  * ignored the named recipient — the gift fell into residue with the user
- * believing it went to the person they named.
+ * believing it went to the person they named. An unknown type now falls back to
+ * the 'unchosen' sentinel rather than 'residue': reopening must not pick a
+ * destination for the gift on the user's behalf, so it lands on the one state
+ * the app treats as still needing an answer, which blocks finalisation until the
+ * user chooses on the Specific Gifts screen.
  */
 await test('gift substitution fields are whitelisted and typed', async () => {
   const docs = [{
@@ -516,8 +522,8 @@ await test('gift substitution fields are whitelisted and typed', async () => {
   await storage.hydrateStorage();
   const [g1, g2] = storage.loadWillData('d1').specificGifts;
 
-  check('an unrecognised gift substitution type falls back to residue',
-    g1.substitutionType === 'residue', `got ${JSON.stringify(g1.substitutionType)}`);
+  check('an unrecognised gift substitution type falls back to the unchosen sentinel',
+    g1.substitutionType === 'unchosen', `got ${JSON.stringify(g1.substitutionType)}`);
   check('a recognised type survives', g2.substitutionType === 'named');
   check('a legacy free-text recipient migrates to a one-entry alternatives list',
     g1.substitutionRecipients.length === 1 && g1.substitutionRecipients[0].name === 'Bob Doyle',

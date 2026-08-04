@@ -274,6 +274,7 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
   // whose whole job is to be read back before signing.
   const subTypeLabel = (type: SubstitutionType): string => {
     switch (type) {
+      case 'unchosen': return 'Not yet chosen';
       case 'per-stirpes': return "Beneficiary's children (per stirpes)";
       case 'named': return 'Named person';
       case 'pro-rata': return 'Pro-rata among survivors';

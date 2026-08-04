@@ -65,7 +65,14 @@ export interface Guardian {
 /**
  * Where a specific gift goes if its recipient dies before the testator.
  *
- * 'residue'     — it falls into and forms part of the residuary estate (default).
+ * 'unchosen'    — the sentinel a new gift starts on, before the user has said
+ *                 what happens if the recipient dies first. It is NOT a default:
+ *                 there is no silent fallback any more, because the safe-looking
+ *                 one ('residue') is still a decision about who inherits, and one
+ *                 the user never made. `blockingProblems` refuses to finalise a
+ *                 will while any gift is still 'unchosen', so the user has to pick
+ *                 — even if what they pick is 'residue'.
+ * 'residue'     — it falls into and forms part of the residuary estate.
  * 'named'       — it passes to one or more named people, who take JOINTLY. A
  *                 specific gift is usually one indivisible thing, so — unlike a
  *                 residuary share — the alternatives are not given percentages;
@@ -77,7 +84,7 @@ export interface Guardian {
  *                 children?), so the option is withheld and refused — see
  *                 `blockingProblems`.
  */
-export type GiftSubstitutionType = 'residue' | 'named' | 'per-stirpes';
+export type GiftSubstitutionType = 'unchosen' | 'residue' | 'named' | 'per-stirpes';
 
 /**
  * Who bears the inheritance tax attributable to a specific gift.
@@ -187,8 +194,17 @@ export interface SpecificGift {
  * 'own-children' there would say in one breath that a predeceased child's
  * children take (per stirpes) and do not take (s.33 disapplied). That
  * combination is refused rather than drafted around — see `blockingProblems`.
+ *
+ * 'unchosen' is the sentinel a new beneficiary starts on, before the user has
+ * said what happens if that beneficiary dies first. It is deliberately not one
+ * of the real options: nothing is pre-selected on the screen, and
+ * `blockingProblems` refuses to finalise a will while any share is still
+ * 'unchosen'. The app used to start a new beneficiary on 'per-stirpes' (or
+ * 'own-children' for a partner) — a sensible guess, but a guess, and a will
+ * that quietly disposes of a share the user never chose is exactly the silent
+ * default this state exists to stop.
  */
-export type SubstitutionType = 'per-stirpes' | 'named' | 'pro-rata' | 'own-children';
+export type SubstitutionType = 'unchosen' | 'per-stirpes' | 'named' | 'pro-rata' | 'own-children';
 
 /**
  * One person who takes a slice of a beneficiary's share if that beneficiary

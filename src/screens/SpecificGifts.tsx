@@ -20,7 +20,7 @@ function uid() {
 const GIFT_SUB_OPTIONS: Array<{ value: GiftSubstitutionType; label: string; detail: string }> = [
   {
     value: 'residue',
-    label: 'Falls into the residuary estate (default)',
+    label: 'Falls into the residuary estate',
     detail: 'The gift is added to everything else you leave and passes under your residuary estate.',
   },
   {
@@ -111,7 +111,10 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
           description: '',
           isCharity: false,
           taxBurden: 'bearsOwnTax',
-          substitutionType: 'residue',
+          // Starts unselected: the app no longer quietly assumes the gift falls
+          // into residue if the recipient dies first. Validation blocks Continue
+          // until the user chooses (see GiftSubstitutionType in types.ts).
+          substitutionType: 'unchosen',
           substitutionRecipients: [],
           substitutionFallback: 'survivors',
         },
@@ -359,6 +362,11 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
               ? 'If none of them survive you'
               : `If ${recipientLabel(gift) || 'the recipient'} doesn't survive you`}
           </Text>
+          {gift.substitutionType === 'unchosen' && (
+            <Text style={[shared.hint, styles.hintRequired]}>
+              Required — choose one. Your will cannot be finished until you say where this gift goes.
+            </Text>
+          )}
           <View style={styles.radioGroup}>
             {GIFT_SUB_OPTIONS
               // Invalid options are shown greyed and non-selectable rather than
@@ -500,6 +508,10 @@ const styles = StyleSheet.create({
     color: C.danger,
     fontSize: 12.5,
     marginTop: 4,
+  },
+  hintRequired: {
+    color: C.danger,
+    fontWeight: '600',
   },
   addMorePrompt: {
     marginTop: 12,

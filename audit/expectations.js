@@ -1204,6 +1204,37 @@ const RAW = {
     problemsMention: ['no other beneficiaries with a share to divide it among'],
     mustContain: ['DRAFT — DO NOT SIGN'],
   },
+
+  /**
+   * A residuary beneficiary whose "what happens if they die first?" is still
+   * unchosen. The app no longer guesses a default, so the will must be refused
+   * until the user picks — and the draft must mark the gap rather than dispose
+   * of the share on a branch nobody chose. The marker is asserted against a
+   * whitespace-normalised copy of the document because it word-wraps in the PDF.
+   */
+  'residuary-substitution-unchosen': {
+    verdict: 'REFUSED',
+    problemsMention: ["have not chosen what happens to Jane Elizabeth Smith's share"],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+    check: ({ shown }) =>
+      shown.replace(/\s+/g, ' ').includes('NO SUBSTITUTION CHOSEN for Jane Elizabeth Smith')
+        ? []
+        : ['draft does not mark the unchosen residuary substitution'],
+  },
+
+  /**
+   * The same for a specific gift left unchosen: refused until the user says
+   * where the gift goes if the recipient dies first, with the draft marking it.
+   */
+  'gift-substitution-unchosen': {
+    verdict: 'REFUSED',
+    problemsMention: ['have not chosen what happens to the gift to Michael Doyle'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+    check: ({ shown }) =>
+      shown.replace(/\s+/g, ' ').includes('NO CHOICE MADE for what happens to this gift')
+        ? []
+        : ['draft does not mark the unchosen gift substitution'],
+  },
 };
 
 // Attach the common invariants to every scenario.
