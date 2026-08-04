@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
-import { WillData, Beneficiary, SubstitutionType, SpecificGift } from '../types';
+import { WillData, Beneficiary, SubstitutionType, SpecificGift, SecondExecutorRole } from '../types';
 import { hasMinorChildren } from '../family';
 import { C, shared } from './shared';
 import { notify, deliverPdf } from '../platform';
@@ -58,6 +58,11 @@ function shareLabel(raw: string): string {
 // the three options on the Specific Gifts screen. Named alternatives take
 // jointly, so they are listed rather than apportioned.
 function giftSubstitutionSummary(g: SpecificGift): string {
+  // No choice made yet. Must not fall through to "Falls into residuary estate":
+  // that is a real destination the user has not picked, and showing it on the
+  // last screen before download is the silent-mismatch the 'unchosen' sentinel
+  // exists to stop. Generation is already blocked; the summary must say so too.
+  if (g.substitutionType === 'unchosen') return 'Not yet chosen';
   if (g.substitutionType === 'per-stirpes') {
     const recip = g.recipients.map(r => r.name.trim()).filter(Boolean).join(' and ') || 'the recipient';
     return `Passes to ${recip}’s children (per stirpes)`;
@@ -71,6 +76,17 @@ function giftSubstitutionSummary(g: SpecificGift): string {
     return `Passes to ${joined}`;
   }
   return 'Falls into residuary estate';
+}
+
+// The row label for the second executor, spelling out which appointment was
+// made. A statement switch would silently label an unchosen role "Secondary";
+// this keeps the review screen honest about the operative words in the will.
+function secondaryExecutorLabel(role: SecondExecutorRole): string {
+  switch (role) {
+    case 'joint': return 'Secondary (acts jointly)';
+    case 'substitute': return 'Secondary (substitute — only if the first cannot act)';
+    case '': return 'Secondary (role not yet chosen)';
+  }
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -175,6 +191,13 @@ function proRataResult(
 function chainSteps(b: Beneficiary, data: WillData): string[] {
   const steps: string[] = [];
   const sub = b.substitution;
+  // No choice made yet. Return early so the common "sideways step" tail below is
+  // NOT appended — otherwise an unchosen share would be summarised as passing to
+  // "the other surviving beneficiaries", a destination the user never picked.
+  // Generation is blocked for this state; the panel must not imply a disposition.
+  if (sub.type === 'unchosen') {
+    return ['not yet chosen — you have not said what happens to this share'];
+  }
   switch (sub.type) {
     case 'own-children':
       steps.push('your children equally (a child of yours who has died is replaced by their own children)');
@@ -328,8 +351,14 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
 
       <Section title="Executors" stepKey="executors" onEdit={onEdit}>
         <Row label="Primary" value={data.primaryExecutor.name} />
-        {data.secondaryExecutor.name ? <Row label="Secondary" value={data.secondaryExecutor.name} /> : null}
-        {data.backupExecutor.name ? <Row label="Backup" value={data.backupExecutor.name} /> : null}
+        {/* The second executor's ROLE is a legal choice that changes the will's
+            operative words — joint means both act together, substitute means the
+            second only steps in if the first cannot. Showing the name alone let a
+            user finalise without re-seeing which appointment they made. */}
+        {data.secondaryExecutor.name
+          ? <Row label={secondaryExecutorLabel(data.secondaryExecutorRole)} value={data.secondaryExecutor.name} />
+          : null}
+        {data.backupExecutor.name ? <Row label="Backup (if neither can act)" value={data.backupExecutor.name} /> : null}
       </Section>
 
       {/* Shown whenever guardians exist, even if the guardians step is hidden

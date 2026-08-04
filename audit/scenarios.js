@@ -914,6 +914,20 @@ const dobBlank = { ...clone(baseline), dob: '' };
 // Marital status never answered — no family declaration can be built.
 const maritalStatusMissing = { ...clone(baseline), maritalStatus: '' };
 
+// Married, but the spouse was never named. The declaration would read "I am
+// married." without saying to whom — an ambiguous legal statement that engages
+// s.18/s.18A and the 1975 Act, all of which turn on WHO the spouse is. Must
+// block, not merely warn.
+const marriedNoPartnerName = { ...clone(baseline), maritalStatus: 'married', partnerName: '' };
+
+// Funeral wishes carrying an emoji. Advisory free text: the character is
+// stripped on the PDF and raised as a WARNING, and must NOT block the will the
+// way an unprintable character in a name does.
+const funeralWishesEmoji = {
+  ...clone(baseline),
+  funeralWishes: 'A simple service 🤫, no flowers.',
+};
+
 // A charity taking half the residue. Every clause about it must be worded for
 // an organisation: ceased/amalgamated, no "children", no trust-until-18.
 const charityResiduary = {
@@ -1007,6 +1021,23 @@ const giftJointNamed = {
         { name: 'Amelia Smith' },
         { name: 'Bob Jones', address: '4 Elm Road, Leeds, LS1 2AB' },
       ],
+    }),
+  ],
+};
+
+// A gift marked as going to a registered charity but with two recipients. The
+// will words it "... (each a registered charity)". That is correct for two
+// genuine charities and wrong the moment a person is named alongside one, and
+// nothing in the data can tell them apart — so this WARNS (asking the user to
+// confirm each is a charity) rather than blocking a legitimate joint-charity
+// legacy.
+const giftCharityMultiRecipient = {
+  ...clone(baseline),
+  specificGifts: [
+    gift('g1', 'Oxfam', '£5,000', {
+      isCharity: true,
+      recipients: [{ name: 'Oxfam' }, { name: 'Cancer Research UK' }],
+      substitutionType: 'residue',
     }),
   ],
 };
@@ -1178,4 +1209,11 @@ module.exports = {
   // on both the residuary and gifts screens (05-Aug-2026)
   'residuary-substitution-unchosen': residuarySubUnchosen,
   'gift-substitution-unchosen': giftSubUnchosen,
+
+  // round 9 — fixes from the 4-LLM adversarial review (05-Aug-2026):
+  // married-without-a-name now blocks; funeral-wishes emoji warns not blocks;
+  // charity gift with more than one recipient warns rather than misdescribing.
+  'married-no-partner-name': marriedNoPartnerName,
+  'funeral-wishes-emoji': funeralWishesEmoji,
+  'gift-charity-multi-recipient': giftCharityMultiRecipient,
 };

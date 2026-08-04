@@ -80,7 +80,11 @@ function namedFields(data: WillData): Array<{ step: StepKey; label: string; valu
     { step: 'executors', label: 'the backup executor name', value: data.backupExecutor.name },
     { step: 'executors', label: 'the backup executor address', value: data.backupExecutor.address },
     { step: 'residuary', label: 'the backstop wording', value: data.ultimateBackstop },
-    { step: 'funeral', label: 'your funeral wishes', value: data.funeralWishes },
+    // NB: funeral wishes are deliberately NOT here. They are advisory and
+    // non-binding, they name no person or gift, and an unprintable character in
+    // them (e.g. an emoji) must not block the whole will with a "match your legal
+    // name" message. Any unprintable there is stripped on the PDF and raised as a
+    // warning instead — see warnings().
     { step: 'family', label: 'the name of the person you expect to marry', value: data.intendedSpouseName },
   ];
   data.children.forEach(child => {
@@ -163,6 +167,21 @@ export function blockingProblems(data: WillData): WillProblem[] {
   // which is not a blank the document can carry.
   if (!data.maritalStatus) {
     problems.push({ step: 'about', message: 'Your marital status is missing. The will has to state your family position.' });
+  }
+
+  // A will that recites "I am married." / "I am in a civil partnership." without
+  // naming the spouse or civil partner is an ambiguous legal statement — it
+  // engages s.18 / s.18A Wills Act 1837 (revocation/effect of marriage, divorce)
+  // and the 1975 Act family-provision safety net, all of which turn on WHO the
+  // spouse is. The generator (pdfGen familyLines) prints the bare status line
+  // when the name is empty, so this must block, not merely warn.
+  if ((data.maritalStatus === 'married' || data.maritalStatus === 'civilPartnership') && !data.partnerName.trim()) {
+    problems.push({
+      step: 'family',
+      message: data.maritalStatus === 'married'
+        ? 'You said you are married but did not name your spouse. The will has to say who your spouse is.'
+        : 'You said you are in a civil partnership but did not name your civil partner. The will has to say who your civil partner is.',
+    });
   }
 
   // s.18(3) Wills Act 1837: a will survives a subsequent marriage only if it
@@ -721,12 +740,42 @@ export function warnings(data: WillData): WillProblem[] {
     });
   }
 
-  if ((data.maritalStatus === 'married' || data.maritalStatus === 'civilPartnership') && !data.partnerName.trim()) {
-    out.push({
-      step: 'family',
-      message: 'You said you are married or in a civil partnership but did not give your partner\'s name.',
-    });
+  // A gift marked as going to a registered charity, given to more than one
+  // recipient, is worded in the will as "... (each a registered charity)". That
+  // is correct for a legacy split between two genuine charities and wrong the
+  // moment a person is named alongside one — and nothing in the data can tell a
+  // charity's name from a person's. A hard block would break the legitimate
+  // two-charities bequest, so instead surface it on Review so the user confirms
+  // every named recipient really is a registered charity before signing; if one
+  // is a person, they can move it to its own gift.
+  data.specificGifts.forEach(gift => {
+    const named = gift.recipients.map(r => r.name.trim()).filter(Boolean);
+    if (gift.isCharity && named.length > 1) {
+      out.push({
+        step: 'gifts',
+        message: `The gift to ${named.join(' and ')} is marked as going to a registered charity and names more than one recipient, so the will describes each of them as a registered charity. Check that every one of them is a registered charity — if any is a person, give that gift to them separately.`,
+      });
+    }
+  });
+
+  // Funeral wishes are advisory free text, so an unprintable character there
+  // (an emoji, an unsupported script) must not block the whole will the way a
+  // name would — but it must not vanish silently either. The PDF strips what it
+  // cannot print, so tell the user which characters will not appear.
+  if (data.funeralWishes.trim()) {
+    const bad = unprintableChars(data.funeralWishes);
+    if (bad.length > 0) {
+      out.push({
+        step: 'funeral',
+        message: `Your funeral wishes contain ${bad.join(' ')}, which cannot be printed and will be left out. The rest of your wishes will appear as written.`,
+      });
+    }
   }
+
+  // Married/civil-partner without a partner name now BLOCKS generation — see
+  // blockingProblems. A will that declares "I am married." without saying to
+  // whom is an ambiguous legal statement, and letting it through was out of step
+  // with the app blocking every other incomplete vital detail.
 
   // An unconfirmed children list now BLOCKS generation — see blockingProblems.
   // The old warning assumed the Family screen's Continue button was the only

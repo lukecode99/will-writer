@@ -1235,6 +1235,46 @@ const RAW = {
         ? []
         : ['draft does not mark the unchosen gift substitution'],
   },
+
+  /**
+   * round 9 — married without naming the spouse. The declaration would read
+   * "I am married." without saying to whom, so generation is refused rather
+   * than producing that ambiguous statement.
+   */
+  'married-no-partner-name': {
+    verdict: 'REFUSED',
+    problemsMention: ['said you are married but did not name your spouse'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
+  /**
+   * round 9 — an emoji in the advisory funeral wishes. It is stripped on the
+   * PDF and raised as a warning; it must NOT block the will (as an unprintable
+   * character in a name would), and the finished document must still render.
+   */
+  'funeral-wishes-emoji': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: ({ advisories }) =>
+      advisories.some(w => w.step === 'funeral' && w.message.includes('cannot be printed and will be left out'))
+        ? []
+        : ['no warning raised for the unprintable character in funeral wishes'],
+  },
+
+  /**
+   * round 9 — a gift marked as a charity but with two recipients. The will
+   * words it "(each a registered charity)". Legitimate for two genuine
+   * charities, so it generates, but it WARNS so the user confirms each named
+   * recipient really is a charity before signing.
+   */
+  'gift-charity-multi-recipient': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: ({ advisories }) =>
+      advisories.some(w => w.step === 'gifts' && w.message.includes('describes each of them as a registered charity'))
+        ? []
+        : ['no warning raised for the multi-recipient charity gift'],
+  },
 };
 
 // Attach the common invariants to every scenario.
