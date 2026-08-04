@@ -455,6 +455,23 @@ const nonChildProRata = {
   ],
 };
 
+// ------------------------------------- pro-rata with no one to share among
+//
+// A sole residuary beneficiary who chose "pro-rata among the survivors" — the
+// share is to be divided among the others, and there are no others. The screen
+// greys this option out when there is no one to share to, so it is only reachable
+// by picking it and then deleting the co-beneficiaries; the clause it generates
+// sends the share to an empty class and drops silently into intestacy. Must be
+// caught, not generated.
+const proRataSole = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '100', {
+      substitution: { type: 'pro-rata', substitutes: [] },
+    }),
+  ],
+};
+
 // ----------------------------------------- "everything to my wife, then the kids"
 //
 // The commonest will in England and Wales, and until now the one shape this app
@@ -1123,4 +1140,7 @@ module.exports = {
   'gift-joint-primary-per-stirpes': giftJointPrimaryPerStirpes,
   'residuary-self-substitute': residuarySelfSubstitute,
   'long-unbroken-name': longUnbrokenName,
+
+  // round 7 — invalid substitution options greyed out on both screens (04-Aug-2026)
+  'pro-rata-sole': proRataSole,
 };

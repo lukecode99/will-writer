@@ -557,18 +557,28 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           <View style={styles.radioGroup}>
             {subOptions(b, data).map(opt => {
               const selected = b.substitution.type === opt.value;
+              // "Pro-rata among survivors" has nothing to divide when this is the
+              // only beneficiary — so it is shown greyed and non-selectable, with
+              // the reason in place of the usual detail, rather than left as a
+              // choice that quietly sends the share nowhere. Validation is the
+              // backstop if a saved draft still carries it.
+              const reason = opt.value === 'pro-rata' && proRataResult(data.beneficiaries, b.id).length === 0
+                ? 'There are no other beneficiaries to share it — add another beneficiary, or choose one of the options above.'
+                : null;
+              const disabled = !!reason;
               return (
                 <TouchableOpacity
                   key={opt.value}
-                  style={[styles.radioOption, selected && styles.radioOptionSelected]}
-                  onPress={() => updateBen(b.id, { substitution: { ...b.substitution, type: opt.value } })}
+                  style={[styles.radioOption, selected && styles.radioOptionSelected, disabled && styles.radioOptionDisabled]}
+                  activeOpacity={disabled ? 1 : 0.2}
+                  onPress={disabled ? undefined : () => updateBen(b.id, { substitution: { ...b.substitution, type: opt.value } })}
                 >
                   <View style={[styles.radioCircle, selected && styles.radioCircleSelected]}>
                     {selected && <View style={styles.radioInner} />}
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.radioLabel, selected && styles.radioLabelSelected]}>{opt.label}</Text>
-                    <Text style={styles.radioDetail}>{opt.detail}</Text>
+                    <Text style={styles.radioDetail}>{disabled ? reason : opt.detail}</Text>
                   </View>
                 </TouchableOpacity>
               );
@@ -906,6 +916,10 @@ const styles = StyleSheet.create({
   radioOptionSelected: {
     borderColor: C.primary,
     backgroundColor: '#EEF2FA',
+  },
+  radioOptionDisabled: {
+    opacity: 0.45,
+    backgroundColor: '#F2F2F4',
   },
   radioCircle: {
     width: 18,

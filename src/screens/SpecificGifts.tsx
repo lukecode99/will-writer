@@ -72,6 +72,21 @@ function giftFallbackOptions(count: number): Array<{ value: NamedSubstituteFallb
   );
 }
 
+// Why a gift substitution option is not available in the current state, or null
+// if it is. Per stirpes ("their own children take it") is the only conditional
+// one: a charity has no children, and with more than one recipient "their
+// children" has no single referent. Rather than hide it — which leaves the user
+// wondering where the option went — it is shown greyed with the reason, and
+// validation refuses to draft it if a saved draft still carries it.
+function giftSubOptionReason(gift: SpecificGift, value: GiftSubstitutionType): string | null {
+  if (value !== 'per-stirpes') return null;
+  if (gift.isCharity) return 'A charity has no children, so this option does not apply.';
+  if (gift.recipients.filter(r => r.name.trim()).length > 1) {
+    return 'You have named more than one recipient, so "their children" has no single meaning — this applies to a single recipient only.';
+  }
+  return null;
+}
+
 const TAX_OPTIONS: Array<{ value: GiftTaxBurden; label: string; detail: string }> = [
   {
     value: 'bearsOwnTax',
@@ -346,28 +361,26 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
           </Text>
           <View style={styles.radioGroup}>
             {GIFT_SUB_OPTIONS
-              // Per stirpes is meaningless for a charity — it has no children —
-              // and ambiguous with several recipients (whose children?), so it
-              // is withheld in both cases, unless a saved draft already chose it,
-              // in which case it is shown so the screen reflects the will as it
-              // stands and validation is what objects.
-              .filter(opt => opt.value !== 'per-stirpes'
-                || gift.substitutionType === 'per-stirpes'
-                || (!gift.isCharity && gift.recipients.filter(r => r.name.trim()).length <= 1))
+              // Invalid options are shown greyed and non-selectable rather than
+              // hidden, so the user can see the choice exists and read why it is
+              // unavailable. Validation is still the backstop for a saved draft.
               .map(opt => {
                 const selected = gift.substitutionType === opt.value;
+                const reason = giftSubOptionReason(gift, opt.value);
+                const disabled = !!reason;
                 return (
                   <TouchableOpacity
                     key={opt.value}
-                    style={[styles.radioOption, selected && styles.radioOptionSelected]}
-                    onPress={() => updateGift(gift.id, { substitutionType: opt.value })}
+                    style={[styles.radioOption, selected && styles.radioOptionSelected, disabled && styles.radioOptionDisabled]}
+                    activeOpacity={disabled ? 1 : 0.2}
+                    onPress={disabled ? undefined : () => updateGift(gift.id, { substitutionType: opt.value })}
                   >
                     <View style={[styles.radioCircle, selected && styles.radioCircleSelected]}>
                       {selected && <View style={styles.radioInner} />}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.radioLabel, selected && styles.radioLabelSelected]}>{opt.label}</Text>
-                      <Text style={styles.radioDetail}>{opt.detail}</Text>
+                      <Text style={styles.radioDetail}>{disabled ? reason : opt.detail}</Text>
                     </View>
                   </TouchableOpacity>
                 );
@@ -520,6 +533,10 @@ const styles = StyleSheet.create({
   radioOptionSelected: {
     borderColor: C.primary,
     backgroundColor: '#EEF2FA',
+  },
+  radioOptionDisabled: {
+    opacity: 0.45,
+    backgroundColor: '#F2F2F4',
   },
   radioCircle: {
     width: 18,

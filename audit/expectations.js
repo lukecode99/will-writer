@@ -1191,6 +1191,19 @@ const RAW = {
       return out;
     }),
   },
+
+  /**
+   * A sole residuary beneficiary who chose "pro-rata among the survivors" — the
+   * share is to be split among the others, and there is no other. The clause
+   * would send the residue to an empty class and lapse into intestacy in silence.
+   * The screen greys the option out when there is no one to share to; this is the
+   * backstop that catches it if it is reached anyway on a saved draft.
+   */
+  'pro-rata-sole': {
+    verdict: 'REFUSED',
+    problemsMention: ['no other beneficiaries with a share to divide it among'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
 };
 
 // Attach the common invariants to every scenario.

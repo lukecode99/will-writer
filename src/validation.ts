@@ -435,6 +435,24 @@ export function blockingProblems(data: WillData): WillProblem[] {
           message: `${b.name.trim() || 'This beneficiary'} is your own child, so "my children equally" cannot be used as the substitute — it would say your grandchildren both do and do not inherit. Choose "their children equally" instead, which for your own child already means your grandchildren.`,
         });
       }
+
+      // Pro-rata among the survivors has nothing to divide when there is no other
+      // beneficiary holding a share: the clause would send this share to a class
+      // with no members, so it drops through to the backstop or to intestacy in
+      // silence. The option is greyed out on the screen when there are no others,
+      // so this is only reachable by choosing it and then removing the other
+      // beneficiaries — the edit whose consequence is invisible from here.
+      if (b.substitution.type === 'pro-rata') {
+        const othersWithShare = data.beneficiaries.filter(
+          o => o.id !== b.id && (parsePercentage(o.percentage) ?? 0) > 0,
+        );
+        if (othersWithShare.length === 0) {
+          problems.push({
+            step: 'residuary',
+            message: `You chose to divide ${b.name.trim() || 'this beneficiary'}'s share pro-rata among the other beneficiaries, but there are no other beneficiaries with a share to divide it among. Name a substitute, choose "their children", or add another beneficiary.`,
+          });
+        }
+      }
     });
   }
 
