@@ -338,6 +338,11 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
           ? <Row label="Partner" value={data.partnerName} />
           : <Text style={styles.empty}>No partner recorded</Text>
         }
+        {/* Shown whenever a partner is named, even when the address is blank, so a
+            missing address (which the PDF prints as "of [ADDRESS]" only when set)
+            is visible on the last page before signing rather than silently absent.
+            Row renders "—" for an empty value. */}
+        {data.partnerName ? <Row label="Partner address" value={data.partnerAddress} /> : null}
         {data.expectingMarriage && data.intendedSpouseName.trim() ? (
           <Row label="Expecting to marry" value={data.intendedSpouseName.trim()} />
         ) : null}

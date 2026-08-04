@@ -727,10 +727,11 @@ const substitutesAreMyChildren = {
 // any cross-screen check to find, so the will passes every test right up to
 // the point it is read out.
 //
-// It must be a warning and not a block. The will is not defective; an
-// unanswered question is not a defect, and refusing to produce a document
-// someone has already finished, over a tick they have never been shown, is a
-// worse outcome than producing it with the point made plainly on Review.
+// It BLOCKS (REFUSED), not merely warns. An unconfirmed children list is the one
+// gap no cross-screen check can otherwise catch — a child who was never typed in
+// leaves no trace — so the confirmation tick is treated as a required answer and
+// the will is refused until it is given. Do not "relax" this to a warning: the
+// expectation for this scenario requires REFUSED, and the gate is deliberate.
 const childrenUnconfirmed = {
   ...clone(baseline),
   childrenConfirmed: false,
