@@ -52,6 +52,26 @@ const GIFT_FALLBACK_OPTIONS: Array<{ value: NamedSubstituteFallback; label: stri
   },
 ];
 
+// With a single named alternative there are no "others" for the gift to fall
+// back to, so the survivors route collapses to exactly one outcome: it falls
+// into the residuary estate — which is the clause the will already prints in
+// that case. Relabel the option so the button describes what it does rather than
+// pointing at an empty set. With two or more alternatives, "the others take it"
+// is the truthful wording and is kept. The stored value stays 'survivors' either
+// way, so the generated will is unchanged — this is a label fix only.
+function giftFallbackOptions(count: number): Array<{ value: NamedSubstituteFallback; label: string; detail: string }> {
+  if (count > 1) return GIFT_FALLBACK_OPTIONS;
+  return GIFT_FALLBACK_OPTIONS.map(opt =>
+    opt.value === 'survivors'
+      ? {
+          value: 'survivors' as NamedSubstituteFallback,
+          label: 'Falls into your residuary estate',
+          detail: 'There is no one else named to take it, so the gift is added to everything else you leave and passes under your residuary estate.',
+        }
+      : opt,
+  );
+}
+
 const TAX_OPTIONS: Array<{ value: GiftTaxBurden; label: string; detail: string }> = [
   {
     value: 'bearsOwnTax',
@@ -417,7 +437,7 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
                       : `If ${gift.substitutionRecipients[0].name.trim() || 'this person'} dies before you too`}
                   </Text>
                   <View style={styles.radioGroup}>
-                    {GIFT_FALLBACK_OPTIONS.map(opt => {
+                    {giftFallbackOptions(gift.substitutionRecipients.length).map(opt => {
                       const selected = gift.substitutionFallback === opt.value;
                       return (
                         <TouchableOpacity
