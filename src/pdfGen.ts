@@ -692,26 +692,62 @@ export async function generateWillPdf(
       const gift = data.specificGifts[i];
       const letter = giftLetter(i);
       const description = field(gift.description, 'gift not described');
-      const recipient = field(gift.recipient, 'recipient name missing');
+
+      const listNames = (arr: string[]): string =>
+        arr.length <= 1 ? (arr[0] || '') : `${arr.slice(0, -1).join(', ')} and ${arr[arr.length - 1]}`;
+      // The address rides with the first mention of a name only, as everywhere
+      // else in the will — identify once, refer back after.
+      const identifyParty = (s: { name: string; address?: string }, missing: string): string =>
+        field(s.name, missing) +
+        (typeof s.address === 'string' && s.address.trim() ? ` of ${inlineAddress(s.address)}` : '');
+
+      // The primary recipients, read from the list. A fixture or a draft saved
+      // under the old single free-text `recipient` field is read through it so
+      // it still drafts, exactly as the substitute path tolerates a legacy name.
+      const giftRecips: { name: string; address?: string }[] =
+        Array.isArray((gift as any).recipients) && (gift as any).recipients.length > 0
+          ? (gift as any).recipients
+          : (typeof (gift as any).recipient === 'string' && (gift as any).recipient.trim()
+              ? [{ name: (gift as any).recipient, address: '' }]
+              : [{ name: '', address: '' }]);
+      const singleRecip = giftRecips.length === 1;
+      // Identified (address on first mention) for the give-clause; bare names for
+      // the triggers and the per-stirpes possessive, which refer back.
+      const recipientLabel = listNames(giftRecips.map(r => identifyParty(r, 'recipient name missing')));
+      const recipBareLabel = listNames(giftRecips.map(r => field(r.name, 'recipient name missing')));
 
       let giftClause: string;
       if (gift.isCharity) {
         // A gift to a UK registered charity is exempt (IHTA 1984 s.23), so there
-        // is no attributable tax to allocate either way.
-        giftClause =
-          `${letter}) I give ${description} to ${recipient} ` +
-          `(a registered charity) to be applied for its general purposes, and the receipt of its ` +
-          `treasurer or other proper officer shall be a full discharge to my Executors.`;
+        // is no attributable tax to allocate either way. Joint charities take on
+        // the same survivorship as joint people: if one ceases to exist the
+        // other(s) take the whole, and the substitution bites only if none do.
+        giftClause = singleRecip
+          ? `${letter}) I give ${description} to ${recipientLabel} ` +
+            `(a registered charity) to be applied for its general purposes, and the receipt of its ` +
+            `treasurer or other proper officer shall be a full discharge to my Executors.`
+          : `${letter}) I give ${description} to ${recipientLabel}, or such of them as shall be in ` +
+            `existence at my death (each a registered charity), to be applied for their general ` +
+            `purposes, and the receipt of the treasurer or other proper officer of each shall be a ` +
+            `full discharge to my Executors.`;
       } else if (gift.taxBurden === 'freeOfTax') {
-        giftClause =
-          `${letter}) I give ${description} to ${recipient} ` +
-          `free of inheritance tax, absolutely.`;
+        // Joint recipients take with survivorship: "or to such of them as shall
+        // survive me by 30 days, jointly" — the survivor(s) take the whole gift,
+        // so the substitution operates only once every one of them has gone.
+        giftClause = singleRecip
+          ? `${letter}) I give ${description} to ${recipientLabel} ` +
+            `free of inheritance tax, absolutely.`
+          : `${letter}) I give ${description} to ${recipientLabel}, or to such of them as shall ` +
+            `survive me by 30 days, jointly, free of inheritance tax, absolutely.`;
       } else {
         // Default. Older drafts saved before this choice existed have no
         // taxBurden at all, and fall here — the option that leaves residue intact.
-        giftClause =
-          `${letter}) I give ${description} to ${recipient} absolutely, ` +
-          `subject to the inheritance tax attributable to this gift.`;
+        giftClause = singleRecip
+          ? `${letter}) I give ${description} to ${recipientLabel} absolutely, ` +
+            `subject to the inheritance tax attributable to this gift.`
+          : `${letter}) I give ${description} to ${recipientLabel}, or to such of them as shall ` +
+            `survive me by 30 days, jointly, absolutely, subject to the inheritance tax attributable ` +
+            `to this gift.`;
       }
 
       // Substitution clause for the gift. Choosing "passes to someone else" and
@@ -719,10 +755,16 @@ export async function generateWillPdf(
       // with nothing on the page to show it — silently changing who inherits.
       // A charity does not "fail to survive me by 30 days" — it ceases to exist
       // or amalgamates, so the trigger has to be worded for the right kind of
-      // recipient or the clause never bites.
+      // recipient or the clause never bites. With joint recipients the trigger
+      // fires only when NONE of them survive — the survivor takes the whole gift
+      // under the give-clause above before any substitution is reached.
       const failTrigger = gift.isCharity
-        ? `If ${recipient} shall have ceased to exist or amalgamated with another charity or body at my death`
-        : `If ${recipient} shall fail to survive me by 30 days`;
+        ? (singleRecip
+            ? `If ${recipBareLabel} shall have ceased to exist or amalgamated with another charity or body at my death`
+            : `If none of them shall be in existence at my death`)
+        : (singleRecip
+            ? `If ${recipBareLabel} shall fail to survive me by 30 days`
+            : `If none of them shall survive me by 30 days`);
 
       // The named alternatives, read from the list. A fixture or a draft saved
       // under the old single free-text field is read through the legacy field so
@@ -735,13 +777,8 @@ export async function generateWillPdf(
               : []);
       const giftFallback = (gift as any).substitutionFallback === 'issue' ? 'issue' : 'survivors';
 
-      // The address rides with the first mention of a name only, as everywhere
-      // else in the will — identify once, refer back after.
       const identifyGiftSub = (s: { name: string; address?: string }): string =>
-        field(s.name, 'alternative recipient name missing') +
-        (typeof s.address === 'string' && s.address.trim() ? ` of ${inlineAddress(s.address)}` : '');
-      const listNames = (arr: string[]): string =>
-        arr.length <= 1 ? (arr[0] || '') : `${arr.slice(0, -1).join(', ')} and ${arr[arr.length - 1]}`;
+        identifyParty(s, 'alternative recipient name missing');
 
       let failClause: string;
       if (gift.substitutionType === 'per-stirpes') {
@@ -750,14 +787,16 @@ export async function generateWillPdf(
         // as the residuary per-stirpes clause, so a child who outlives me but
         // dies inside the window still passes their branch down. The ultimate
         // limb here is residue, not the other beneficiaries: a gift that fails
-        // all the way through has always fallen into the estate.
-        const rPoss = `${recipient}'s`;
+        // all the way through has always fallen into the estate. Only ever
+        // offered for a single recipient — validation refuses it otherwise, so
+        // "the recipient's children" always has one referent.
+        const rPoss = `${recipBareLabel}'s`;
         failClause =
           `${failTrigger}, this gift shall pass in equal shares to such of ${rPoss} children as shall ` +
-          `survive me by 30 days; if any child of ${recipient} shall have died in my lifetime or failed ` +
+          `survive me by 30 days; if any child of ${recipBareLabel} shall have died in my lifetime or failed ` +
           `to survive me by 30 days, leaving children of their own living at my death, those ` +
           `grandchildren shall take their parent's share equally between them (per stirpes); and if no ` +
-          `child or issue of ${recipient} shall so survive me, this gift shall fall into and form part ` +
+          `child or issue of ${recipBareLabel} shall so survive me, this gift shall fall into and form part ` +
           `of my residuary estate.`;
       } else if (gift.substitutionType === 'named') {
         // The alternatives take on the same 30-day condition as every other

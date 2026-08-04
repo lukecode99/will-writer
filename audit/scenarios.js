@@ -49,19 +49,25 @@ function gift(id, recipient, description, opts = {}) {
   // Accepts either the new list (opts.substitutionRecipients: [{name, address}])
   // or the legacy single string (opts.substitutionRecipient), which migrates to
   // a one-entry list — the same shape storage.normalizeGift produces on load.
-  const recipients = Array.isArray(opts.substitutionRecipients)
+  const subRecipients = Array.isArray(opts.substitutionRecipients)
     ? opts.substitutionRecipients.map((s, i) => ({ id: s.id || `${id}-sub${i}`, name: s.name || '', address: s.address || '' }))
     : (opts.substitutionRecipient
         ? [{ id: `${id}-sub0`, name: opts.substitutionRecipient, address: opts.substitutionRecipientAddress || '' }]
         : []);
+  // The primary recipient is a list too. `recipient` is the ordinary single
+  // string; opts.recipients: [{name, address}] gives several joint recipients,
+  // the shape storage.normalizeGift produces on load.
+  const recipients = Array.isArray(opts.recipients)
+    ? opts.recipients.map((r, i) => ({ id: r.id || `${id}-rec${i}`, name: r.name || '', address: r.address || '' }))
+    : [{ id: `${id}-rec0`, name: recipient, address: opts.recipientAddress || '' }];
   return {
     id,
-    recipient,
+    recipients,
     description,
     isCharity: opts.isCharity || false,
     taxBurden: opts.taxBurden || 'bearsOwnTax',
     substitutionType: opts.substitutionType || 'residue',
-    substitutionRecipients: recipients,
+    substitutionRecipients: subRecipients,
     substitutionFallback: opts.substitutionFallback || 'survivors',
   };
 }
@@ -971,6 +977,39 @@ const giftNamedIssue = {
   ],
 };
 
+// A gift to TWO people jointly, the second carrying an address. They take with
+// survivorship — "or to such of them as shall survive me by 30 days, jointly" —
+// so the survivor takes the whole, and the named alternative below operates only
+// if none of them survive.
+const giftJointPrimary = {
+  ...clone(baseline),
+  specificGifts: [
+    gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar', {
+      recipients: [
+        { name: 'Michael Doyle' },
+        { name: 'Sarah Doyle', address: '9 Oak Lane, York, YO1 7AB' },
+      ],
+      substitutionType: 'named',
+      substitutionRecipients: [{ name: 'Amelia Smith' }],
+    }),
+  ],
+};
+
+// Joint primary recipients set to pass to "the recipient's own children" (per
+// stirpes) — ambiguous with more than one recipient, so it must be REFUSED.
+const giftJointPrimaryPerStirpes = {
+  ...clone(baseline),
+  specificGifts: [
+    gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar', {
+      recipients: [
+        { name: 'Michael Doyle' },
+        { name: 'Sarah Doyle' },
+      ],
+      substitutionType: 'per-stirpes',
+    }),
+  ],
+};
+
 // A residuary substitute who is the beneficiary they stand behind.
 const residuarySelfSubstitute = {
   ...clone(baseline),
@@ -1080,6 +1119,8 @@ module.exports = {
   'gift-per-stirpes': giftPerStirpes,
   'gift-joint-named': giftJointNamed,
   'gift-named-issue': giftNamedIssue,
+  'gift-joint-primary': giftJointPrimary,
+  'gift-joint-primary-per-stirpes': giftJointPrimaryPerStirpes,
   'residuary-self-substitute': residuarySelfSubstitute,
   'long-unbroken-name': longUnbrokenName,
 };

@@ -91,10 +91,13 @@ function namedFields(data: WillData): Array<{ step: StepKey; label: string; valu
     fields.push({ step: 'guardians', label: `the address for guardian "${guardian.name}"`, value: guardian.address });
   });
   data.specificGifts.forEach(gift => {
-    fields.push({ step: 'gifts', label: `the recipient "${gift.recipient}"`, value: gift.recipient });
+    const giftLabel = gift.recipients.map(r => r.name).filter(n => n.trim()).join(' and ');
+    gift.recipients.forEach(r => {
+      fields.push({ step: 'gifts', label: `the recipient "${r.name}"`, value: r.name });
+    });
     fields.push({ step: 'gifts', label: `the gift "${gift.description}"`, value: gift.description });
     gift.substitutionRecipients.forEach(s => {
-      fields.push({ step: 'gifts', label: `the alternative recipient "${s.name}" for "${gift.recipient}"`, value: s.name });
+      fields.push({ step: 'gifts', label: `the alternative recipient "${s.name}" for "${giftLabel}"`, value: s.name });
     });
   });
   data.beneficiaries.forEach(b => {
@@ -436,28 +439,41 @@ export function blockingProblems(data: WillData): WillProblem[] {
   }
 
   data.specificGifts.forEach(gift => {
-    if (!gift.recipient.trim() || !gift.description.trim()) {
+    const namedRecipients = gift.recipients.filter(r => r.name.trim());
+    const giftLabel = namedRecipients.map(r => r.name.trim()).join(' and ') || 'a recipient';
+    if (namedRecipients.length === 0 || !gift.description.trim()) {
       problems.push({
         step: 'gifts',
         message: 'A specific gift is missing either the item or who receives it.',
       });
     }
+    // "Their own children take it" has one referent only when there is one
+    // recipient. With several joint recipients "the recipient's children" is
+    // ambiguous — whose children? — so the combination is refused rather than
+    // drafted into a clause nobody can construe.
+    if (gift.substitutionType === 'per-stirpes' && namedRecipients.length > 1) {
+      problems.push({
+        step: 'gifts',
+        message: `The gift to ${giftLabel} is set to pass to the recipient's own children, but it has more than one recipient. Say whose children should take it by naming an alternative, or let it fall into your residuary estate.`,
+      });
+    }
     if (gift.substitutionType === 'named' && !gift.substitutionRecipients.some(s => s.name.trim())) {
       problems.push({
         step: 'gifts',
-        message: `You chose a named alternative for the gift to ${gift.recipient.trim() || 'a recipient'} but did not say who.`,
+        message: `You chose a named alternative for the gift to ${giftLabel} but did not say who.`,
       });
     }
     // "If Rita fails to survive me, this gift shall pass to Rita" — a clause
     // that reads as complete and does nothing at all. Checked against every
-    // named alternative, since any one of them being the recipient is the same
-    // inoperative loop.
+    // named alternative AND every primary recipient, since any overlap is the
+    // same inoperative loop.
     if (gift.substitutionType === 'named') {
+      const recipNamesLower = namedRecipients.map(r => r.name.trim().toLowerCase());
       gift.substitutionRecipients.forEach(s => {
-        if (s.name.trim() && s.name.trim().toLowerCase() === gift.recipient.trim().toLowerCase()) {
+        if (s.name.trim() && recipNamesLower.includes(s.name.trim().toLowerCase())) {
           problems.push({
             step: 'gifts',
-            message: `An alternative for the gift to ${gift.recipient.trim()} is the same person as the recipient. Name someone else, or let the gift fall into your residuary estate.`,
+            message: `An alternative for the gift to ${giftLabel} is the same person as the recipient. Name someone else, or let the gift fall into your residuary estate.`,
           });
         }
       });
@@ -735,7 +751,7 @@ export function warnings(data: WillData): WillProblem[] {
     [
       ...data.beneficiaries.map(b => b.name),
       ...data.beneficiaries.flatMap(b => b.substitution.substitutes.map(s => s.name)),
-      ...data.specificGifts.map(g => g.recipient),
+      ...data.specificGifts.flatMap(g => g.recipients.map(r => r.name)),
       ...data.specificGifts.flatMap(g => g.substitutionRecipients.map(s => s.name)),
     ].map(name => name.trim().toLowerCase()).filter(Boolean),
   );

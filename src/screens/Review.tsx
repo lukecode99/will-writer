@@ -59,7 +59,8 @@ function shareLabel(raw: string): string {
 // jointly, so they are listed rather than apportioned.
 function giftSubstitutionSummary(g: SpecificGift): string {
   if (g.substitutionType === 'per-stirpes') {
-    return `Passes to ${g.recipient.trim() || 'the recipient'}’s children (per stirpes)`;
+    const recip = g.recipients.map(r => r.name.trim()).filter(Boolean).join(' and ') || 'the recipient';
+    return `Passes to ${recip}’s children (per stirpes)`;
   }
   if (g.substitutionType === 'named') {
     const names = g.substitutionRecipients.map(s => s.name.trim()).filter(Boolean);
@@ -361,7 +362,7 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
           ? <Text style={styles.empty}>No specific gifts</Text>
           : data.specificGifts.map((g, i) => (
             <View key={g.id}>
-              <Row label={`Gift ${i + 1}`} value={`${g.description} → ${g.recipient}${g.isCharity ? ' (charity)' : ''}`} />
+              <Row label={`Gift ${i + 1}`} value={`${g.description} → ${g.recipients.map(r => r.name.trim()).filter(Boolean).join(' and ') || 'the recipient'}${g.recipients.filter(r => r.name.trim()).length > 1 ? ' (jointly)' : ''}${g.isCharity ? ' (charity)' : ''}`} />
               {!g.isCharity && (
                 <Row
                   label="Inheritance tax"

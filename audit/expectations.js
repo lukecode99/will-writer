@@ -1141,6 +1141,29 @@ const RAW = {
     ),
   },
 
+  /** Two people take one gift jointly, with survivorship; alternative only if none survive. */
+  'gift-joint-primary': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      documentSays(
+        'I give my 1968 Gibson guitar to Michael Doyle and Sarah Doyle of 9 Oak Lane, York, YO1 7AB, or to such of them as shall survive me by 30 days, jointly, absolutely',
+        'If none of them shall survive me by 30 days, this gift shall pass to Amelia Smith',
+      ),
+      // The address rides the first mention only — it must not repeat.
+      ({ shown }) => (flatten(shown).match(/9 Oak Lane, York, YO1 7AB/g) || []).length > 1
+        ? ['the recipient address repeats on a later mention'] : [],
+    ),
+  },
+
+  /** "Their own children take it" with two recipients — whose children? Refused. */
+  'gift-joint-primary-per-stirpes': {
+    verdict: 'REFUSED',
+    problemsMention: ['more than one recipient'],
+    mustContain: ['DRAFT — DO NOT SIGN'],
+  },
+
   /** The residuary version of the same nothing-clause. */
   'residuary-self-substitute': {
     verdict: 'REFUSED',

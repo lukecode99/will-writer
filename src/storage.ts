@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   WillData, EMPTY_WILL, Beneficiary, BeneficiarySubstitution, Guardian, SpecificGift,
-  GiftSubstitute, GiftSubstitutionType, Substitute, SubstitutionType, Child, Executor,
+  GiftSubstitute, GiftRecipient, GiftSubstitutionType, Substitute, SubstitutionType, Child, Executor,
 } from './types';
 
 const DOCS_KEY = 'willWriter.docs.v1';
@@ -197,6 +197,10 @@ function normalizeGift(g: any): SpecificGift {
   // was a list.
   const legacyRecipient = typeof g.substitutionRecipient === 'string' && g.substitutionRecipient.trim() !== '';
 
+  // A legacy single primary recipient, from a build before a gift could be
+  // given to several people jointly.
+  const legacyPrimary = typeof g.recipient === 'string' && g.recipient.trim() !== '';
+
   // Whitelisted: only the explicit known values count. 'per-stirpes' and 'named'
   // survive; everything else falls to 'residue'. Unlike a beneficiary share —
   // where the default (per-stirpes) silently rerouted to issue, so an unknown
@@ -235,9 +239,26 @@ function normalizeGift(g: any): SpecificGift {
     substitutionRecipients = [{ id: Math.random().toString(36).slice(2), name: g.substitutionRecipient, address: '' }];
   }
 
+  // The primary recipients, typed the same way as the alternatives above. A
+  // draft saved before the recipient was a list migrates its single free-text
+  // name to a one-entry list, so reopening an old gift keeps the same person.
+  let recipients: GiftRecipient[] = [];
+  if (Array.isArray(g.recipients)) {
+    recipients = g.recipients
+      .filter((r: any) => r && typeof r === 'object')
+      .map((r: any) => ({
+        id: typeof r.id === 'string' && r.id ? r.id : Math.random().toString(36).slice(2),
+        name: str(r.name),
+        address: str(r.address),
+      }));
+  }
+  if (recipients.length === 0 && legacyPrimary) {
+    recipients = [{ id: Math.random().toString(36).slice(2), name: g.recipient, address: '' }];
+  }
+
   return {
     id: typeof g.id === 'string' && g.id ? g.id : Math.random().toString(36).slice(2),
-    recipient: str(g.recipient),
+    recipients,
     description: str(g.description),
     isCharity: g.isCharity === true,
     // Drafts saved before the tax choice existed had "free of inheritance tax"

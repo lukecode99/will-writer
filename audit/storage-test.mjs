@@ -229,6 +229,9 @@ await test('field defaults on old drafts', async () => {
     !!data.beneficiaries[0].id && data.beneficiaries[0].substitution.type === 'per-stirpes');
   check('an old gift defaults to bearing its own tax, which leaves residue intact',
     data.specificGifts[0].taxBurden === 'bearsOwnTax');
+  check('an old single-string gift recipient migrates to a one-entry recipients list',
+    data.specificGifts[0].recipients.length === 1 && data.specificGifts[0].recipients[0].name === 'Nicholas Higgins',
+    `got ${JSON.stringify(data.specificGifts[0].recipients)}`);
   check('an old draft is not silently marked as being for someone else',
     data.isForSomeoneElse === false);
   // The migration that matters most: these two were appointed jointly, and

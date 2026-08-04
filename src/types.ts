@@ -72,6 +72,10 @@ export interface Guardian {
  *                 they share the gift between them.
  * 'per-stirpes' — it passes to the recipient's own children, then down to their
  *                 issue (Wills Act 1837 s.33 machinery, stated expressly).
+ *                 Offered only when the gift has a SINGLE recipient: with joint
+ *                 recipients "the recipient's children" has no referent (whose
+ *                 children?), so the option is withheld and refused — see
+ *                 `blockingProblems`.
  */
 export type GiftSubstitutionType = 'residue' | 'named' | 'per-stirpes';
 
@@ -102,9 +106,35 @@ export interface GiftSubstitute {
   address: string;
 }
 
+/**
+ * One primary recipient of a specific gift. Structurally identical to
+ * {@link GiftSubstitute} — a name and an optional address — but a different
+ * role, so it is a distinct type rather than a reuse.
+ *
+ * `recipients` is a list because a gift can be given to several people jointly:
+ * "my wedding ring to Jacob and Keira". Joint recipients take with survivorship
+ * — if one dies before the testator the other(s) take the whole gift, and the
+ * substitution (residue / named / per-stirpes) operates only if NONE of them
+ * survive. That mirrors how the named ALTERNATIVES already behave, so the two
+ * halves of the gift read the same way.
+ */
+export interface GiftRecipient {
+  id: string;
+  name: string;
+  address: string;
+}
+
 export interface SpecificGift {
   id: string;
-  recipient: string;
+
+  /**
+   * Who receives the gift. A list because a gift can be given to several people
+   * JOINTLY, who take with survivorship (see {@link GiftRecipient}). Replaces
+   * the old single `recipient` string, which is migrated into a one-entry list
+   * on load.
+   */
+  recipients: GiftRecipient[];
+
   description: string;
   isCharity: boolean;
   taxBurden: GiftTaxBurden;

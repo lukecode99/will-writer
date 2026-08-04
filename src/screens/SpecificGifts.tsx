@@ -72,7 +72,7 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
         ...data.specificGifts,
         {
           id: uid(),
-          recipient: '',
+          recipients: [{ id: uid(), name: '', address: '' }],
           description: '',
           isCharity: false,
           taxBurden: 'bearsOwnTax',
@@ -88,6 +88,36 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
     onChange({
       specificGifts: data.specificGifts.map(g => g.id === id ? { ...g, ...updates } : g),
     });
+  }
+
+  function addRecipient(gift: SpecificGift, name: string) {
+    updateGift(gift.id, {
+      recipients: [...gift.recipients, { id: uid(), name, address: '' }],
+    });
+  }
+
+  function updateRecipient(gift: SpecificGift, rid: string, updates: Partial<{ name: string; address: string }>) {
+    updateGift(gift.id, {
+      recipients: gift.recipients.map(r => r.id === rid ? { ...r, ...updates } : r),
+    });
+  }
+
+  function removeRecipient(gift: SpecificGift, rid: string) {
+    const r = gift.recipients.find(x => x.id === rid);
+    const doRemove = () => updateGift(gift.id, {
+      recipients: gift.recipients.filter(x => x.id !== rid),
+    });
+    // A blank row is scaffolding, not a decision.
+    if (!r || !r.name.trim()) {
+      doRemove();
+      return;
+    }
+    confirmDestructive(`Remove ${r.name.trim()} as a recipient of this gift?`, 'Remove', doRemove);
+  }
+
+  // The joint recipients as one readable label, for headings and confirmations.
+  function recipientLabel(gift: SpecificGift): string {
+    return gift.recipients.map(r => r.name.trim()).filter(Boolean).join(' and ');
   }
 
   function addGiftSub(gift: SpecificGift, name: string) {
@@ -119,12 +149,13 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
     const g = data.specificGifts.find(x => x.id === id);
     const doRemove = () => onChange({ specificGifts: data.specificGifts.filter(x => x.id !== id) });
     // A blank row is scaffolding, not a decision — no ceremony to remove it.
-    if (!g || (!g.description.trim() && !g.recipient.trim())) {
+    const who = g ? recipientLabel(g) : '';
+    if (!g || (!g.description.trim() && !who)) {
       doRemove();
       return;
     }
     confirmDestructive(
-      `Remove the gift of ${g.description.trim() || 'this item'}${g.recipient.trim() ? ` to ${g.recipient.trim()}` : ''}?`,
+      `Remove the gift of ${g.description.trim() || 'this item'}${who ? ` to ${who}` : ''}?`,
       'Remove',
       doRemove,
     );
@@ -182,16 +213,55 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
           ) : null}
 
           <Text style={shared.label}>Recipient</Text>
-          <TextInput
-            style={[shared.input, !gift.recipient.trim() ? styles.inputError : null]}
-            placeholder="Full name, or charity name"
-            value={gift.recipient}
-            onChangeText={v => updateGift(gift.id, { recipient: v })}
-            autoCapitalize="words"
-          />
-          {!gift.recipient.trim() ? (
+          <Text style={shared.hint}>
+            Name more than one person and they take the gift jointly — if one dies before you, the
+            other(s) take the whole gift, and any alternative below only applies if none of them survive you.
+          </Text>
+          {gift.recipients.map(r => (
+            <View key={r.id} style={styles.subCard}>
+              <View style={styles.subRow}>
+                <TextInput
+                  style={[shared.input, { flex: 1 }, !r.name.trim() ? styles.inputError : null]}
+                  placeholder="Full name, or charity name"
+                  value={r.name}
+                  onChangeText={v => updateRecipient(gift, r.id, { name: v })}
+                  autoCapitalize="words"
+                />
+                {gift.recipients.length > 1 ? (
+                  <TouchableOpacity style={styles.subRemove} onPress={() => removeRecipient(gift, r.id)}>
+                    <Text style={shared.dangerBtnText}>✕</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              {/* Optional, like every other name in the will — a bare name is a
+                  search, and executors are the ones who run it. */}
+              <TextInput
+                style={[shared.input, shared.inputMulti]}
+                placeholder="Their address (optional — helps your executors identify them)"
+                value={r.address}
+                onChangeText={v => updateRecipient(gift, r.id, { address: v })}
+                multiline
+                numberOfLines={2}
+              />
+            </View>
+          ))}
+          {gift.recipients.some(r => !r.name.trim()) ? (
             <Text style={styles.errorText}>Say who receives it, or remove this gift.</Text>
           ) : null}
+
+          <View style={styles.chipRow}>
+            {known
+              .filter(p => !gift.recipients.some(r => r.name.trim().toLowerCase() === p.name.trim().toLowerCase()))
+              .map(p => (
+                <TouchableOpacity key={p.ref} style={styles.chip} onPress={() => addRecipient(gift, p.name)}>
+                  <Text style={styles.chipText}>+ {p.name}</Text>
+                  <Text style={styles.chipRel}>{p.relationship}</Text>
+                </TouchableOpacity>
+              ))}
+            <TouchableOpacity style={styles.chip} onPress={() => addRecipient(gift, '')}>
+              <Text style={styles.chipText}>+ Someone else</Text>
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.switchRow}>
             <Switch
@@ -247,15 +317,20 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
           )}
 
           <Text style={[shared.label, { marginTop: 16 }]}>
-            If {gift.recipient || 'the recipient'} doesn't survive you
+            {gift.recipients.filter(r => r.name.trim()).length > 1
+              ? 'If none of them survive you'
+              : `If ${recipientLabel(gift) || 'the recipient'} doesn't survive you`}
           </Text>
           <View style={styles.radioGroup}>
             {GIFT_SUB_OPTIONS
               // Per stirpes is meaningless for a charity — it has no children —
-              // so it is withheld, unless a saved draft already chose it, in
-              // which case it is shown so the screen reflects the will as it
+              // and ambiguous with several recipients (whose children?), so it
+              // is withheld in both cases, unless a saved draft already chose it,
+              // in which case it is shown so the screen reflects the will as it
               // stands and validation is what objects.
-              .filter(opt => opt.value !== 'per-stirpes' || !gift.isCharity || gift.substitutionType === 'per-stirpes')
+              .filter(opt => opt.value !== 'per-stirpes'
+                || gift.substitutionType === 'per-stirpes'
+                || (!gift.isCharity && gift.recipients.filter(r => r.name.trim()).length <= 1))
               .map(opt => {
                 const selected = gift.substitutionType === opt.value;
                 return (
