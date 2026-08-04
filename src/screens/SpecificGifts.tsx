@@ -212,7 +212,7 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
             <Text style={styles.errorText}>Say what the gift is, or remove this gift.</Text>
           ) : null}
 
-          <Text style={shared.label}>Recipient</Text>
+          <Text style={shared.label}>Recipient(s)</Text>
           <Text style={shared.hint}>
             Name more than one person and they take the gift jointly — if one dies before you, the
             other(s) take the whole gift, and any alternative below only applies if none of them survive you.
@@ -249,6 +249,9 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
             <Text style={styles.errorText}>Say who receives it, or remove this gift.</Text>
           ) : null}
 
+          <Text style={[shared.hint, styles.addMorePrompt]}>
+            Add more beneficiaries if this is a jointly shared gift:
+          </Text>
           <View style={styles.chipRow}>
             {known
               .filter(p => !gift.recipients.some(r => r.name.trim().toLowerCase() === p.name.trim().toLowerCase()))
@@ -259,7 +262,7 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
                 </TouchableOpacity>
               ))}
             <TouchableOpacity style={styles.chip} onPress={() => addRecipient(gift, '')}>
-              <Text style={styles.chipText}>+ Someone else</Text>
+              <Text style={styles.chipText}>+ Add another recipient</Text>
             </TouchableOpacity>
           </View>
 
@@ -464,6 +467,11 @@ const styles = StyleSheet.create({
     color: C.danger,
     fontSize: 12.5,
     marginTop: 4,
+  },
+  addMorePrompt: {
+    marginTop: 12,
+    marginBottom: 2,
+    fontWeight: '600',
   },
   switchRow: {
     flexDirection: 'row',
