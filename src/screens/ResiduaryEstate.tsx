@@ -5,6 +5,7 @@ import { blockingProblems, minorFlagWarning, parsePercentage, percentageTotal } 
 import { KnownPerson, knownPeople, knownRefs } from '../people';
 import { C, shared } from './shared';
 import { notify, confirmDestructive } from '../platform';
+import { ScopeNotice } from '../components/ScopeNotice';
 
 interface Props {
   data: WillData;
@@ -438,6 +439,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
               onChangeText={v => updateBen(b.id, { relationship: v })}
             />
           )}
+          {linked ? null : <ScopeNotice text={b.relationship} />}
 
           <Text style={shared.label}>Share (%)</Text>
           <TextInput
@@ -816,6 +818,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
           If left blank, the estate would pass under the rules of intestacy — this may not match your wishes.
         </Text>
       )}
+      <ScopeNotice text={data.ultimateBackstop} />
 
       <TouchableOpacity style={shared.primaryBtn} onPress={handleNext}>
         <Text style={shared.primaryBtnText}>Continue</Text>

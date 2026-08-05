@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { WillData, BurialPreference } from '../types';
 import { C, shared } from './shared';
+import { ScopeNotice } from '../components/ScopeNotice';
 
 interface Props {
   data: WillData;
@@ -53,6 +54,7 @@ export default function FuneralWishes({ data, onChange, onNext, onBack }: Props)
         numberOfLines={4}
         autoCapitalize="sentences"
       />
+      <ScopeNotice text={data.funeralWishes} />
 
       <TouchableOpacity style={shared.primaryBtn} onPress={onNext}>
         <Text style={shared.primaryBtnText}>

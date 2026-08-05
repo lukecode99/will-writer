@@ -5,6 +5,7 @@ import { blockingProblems } from '../validation';
 import { knownPeople } from '../people';
 import { notify, confirmDestructive } from '../platform';
 import { C, shared } from './shared';
+import { ScopeNotice } from '../components/ScopeNotice';
 
 interface Props {
   data: WillData;
@@ -249,6 +250,7 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
           {!gift.description.trim() ? (
             <Text style={styles.errorText}>Say what the gift is, or remove this gift.</Text>
           ) : null}
+          <ScopeNotice text={gift.description} />
 
           <Text style={shared.label}>Recipient(s)</Text>
           <Text style={shared.hint}>
