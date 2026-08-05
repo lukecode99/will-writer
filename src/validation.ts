@@ -1,5 +1,6 @@
 import { Beneficiary, WillData } from './types';
 import { unprintableChars } from './text';
+import { scopeWarnings } from './scope';
 import { parseUkDate, ageInYears, hasMinorChildren, todayUtc } from './family';
 import { PARTNER_REF, childRef, knownRefs } from './people';
 
@@ -947,6 +948,11 @@ export function warnings(data: WillData): WillProblem[] {
       message: 'No backstop is set. If none of your beneficiaries outlive you, your estate would pass under the intestacy rules.',
     });
   }
+
+  // Out-of-scope tripwire: scan the free-text fields for intentions this app
+  // cannot express (trusts, business interests, overseas property, conditions,
+  // and the like) and surface each as a non-blocking advisory. See src/scope.ts.
+  out.push(...scopeWarnings(data));
 
   return out;
 }

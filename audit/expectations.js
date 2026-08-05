@@ -1275,6 +1275,65 @@ const RAW = {
         ? []
         : ['no warning raised for the multi-recipient charity gift'],
   },
+
+  /**
+   * round 10 — the out-of-scope tripwire (src/scope.ts). Each of these types an
+   * intention this app cannot express into a free-text field. None of them
+   * blocks: the will still generates (verdict ok), but Review warns so the user
+   * does not sign a document that quietly does something else. The last one is
+   * the false-positive guard — ordinary wording must trip nothing.
+   */
+  'scope-trust': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('it cannot set up a trust')),
+  },
+  'scope-business': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('business or company interest')),
+  },
+  'scope-overseas': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('property outside England & Wales')),
+  },
+  'scope-agricultural': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('farm or agricultural land')),
+  },
+  'scope-vulnerable': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('disabled or vulnerable beneficiary')),
+  },
+  'scope-tax': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('inheritance-tax planning')),
+  },
+  'scope-conditional': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(noMarkers, advisoryMentions('it cannot hold a gift back')),
+  },
+  'scope-clean': {
+    verdict: 'ok',
+    mustNotContain: ['DRAFT — DO NOT SIGN'],
+    check: all(
+      noMarkers,
+      advisoryDoesNotMention(
+        'it cannot set up a trust',
+        'business or company interest',
+        'property outside England & Wales',
+        'farm or agricultural land',
+        'disabled or vulnerable beneficiary',
+        'inheritance-tax planning',
+        'it cannot hold a gift back',
+      ),
+    ),
+  },
 };
 
 // Attach the common invariants to every scenario.

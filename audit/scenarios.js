@@ -1111,6 +1111,70 @@ const longUnbrokenName = {
   fullName: 'John ' + 'X'.repeat(180),
 };
 
+// ---------------------------------------------------- round 10: scope tripwire
+// Free-text fields carrying intentions this app cannot express. Each must raise
+// a NON-BLOCKING warning (verdict stays ok) — see src/scope.ts.
+
+// "held on trust for" in a gift description — a trust, which the app cannot make.
+const scopeTrust = {
+  ...clone(baseline),
+  specificGifts: [gift('g1', 'Oliver Smith', 'my flat at 3 Mill Lane to be held on trust for him')],
+};
+
+// A shareholding in a limited company left as a specific gift.
+const scopeBusiness = {
+  ...clone(baseline),
+  specificGifts: [gift('g1', 'Amelia Smith', 'my shareholding in Smith Joinery Ltd')],
+};
+
+// Property abroad, governed by the law where it sits.
+const scopeOverseas = {
+  ...clone(baseline),
+  specificGifts: [gift('g1', 'Oliver Smith', 'my apartment overseas in Portugal')],
+};
+
+// Agricultural land, with its own relief and succession rules.
+const scopeAgricultural = {
+  ...clone(baseline),
+  specificGifts: [gift('g1', 'Oliver Smith', 'my share of the farmland at Rose Farm')],
+};
+
+// A disabled residuary beneficiary — the benefits-trap case, described in the
+// relationship free-text (step 'residuary').
+const scopeVulnerable = {
+  ...clone(baseline),
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'wife', '60'),
+    ben('b2', 'Oliver Smith', 'my disabled son', '40', { isOwnChild: true }),
+  ],
+};
+
+// Estate-level inheritance-tax planning, which the app does not do.
+const scopeTax = {
+  ...clone(baseline),
+  specificGifts: [gift('g1', 'Oliver Smith', 'my house, arranged for inheritance tax efficiency')],
+};
+
+// An age condition on a gift — held back, not outright.
+const scopeConditional = {
+  ...clone(baseline),
+  specificGifts: [gift('g1', 'Oliver Smith', 'my car, but only when he reaches the age of 21')],
+};
+
+// The false-positive guard. Ordinary wording that MUST NOT trip the scanner:
+// "equal shares" (not "shares in"), "business partner"/"civil partnership"
+// describing people, in the fields the scanner reads.
+const scopeClean = {
+  ...clone(baseline),
+  specificGifts: [gift('g1', 'Michael Doyle', 'my 1968 Gibson guitar')],
+  beneficiaries: [
+    ben('b1', 'Jane Elizabeth Smith', 'my civil partnership spouse', '50'),
+    ben('b2', 'Oliver Smith', 'my business partner and son', '25', { isOwnChild: true }),
+    ben('b3', 'Amelia Smith', 'daughter', '25', { isOwnChild: true }),
+  ],
+  ultimateBackstop: 'to be divided in equal shares among my surviving cousins',
+};
+
 module.exports = {
   baseline,
   'child-name-differs-unlinked': childNameDiffersUnlinked,
@@ -1217,4 +1281,14 @@ module.exports = {
   'married-no-partner-name': marriedNoPartnerName,
   'funeral-wishes-emoji': funeralWishesEmoji,
   'gift-charity-multi-recipient': giftCharityMultiRecipient,
+
+  // round 10 — out-of-scope keyword tripwire (src/scope.ts)
+  'scope-trust': scopeTrust,
+  'scope-business': scopeBusiness,
+  'scope-overseas': scopeOverseas,
+  'scope-agricultural': scopeAgricultural,
+  'scope-vulnerable': scopeVulnerable,
+  'scope-tax': scopeTax,
+  'scope-conditional': scopeConditional,
+  'scope-clean': scopeClean,
 };
