@@ -28,7 +28,7 @@
     },
     "platforms": ["ios", "web"],
     "experiments": {
-      "baseUrl": "/will-writer"
+      "baseUrl": ""
     }
   }
 }
