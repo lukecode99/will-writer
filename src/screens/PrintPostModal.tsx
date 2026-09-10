@@ -8,6 +8,8 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  Linking,
+  Platform,
 } from 'react-native';
 import { C, shared, CONTENT_MAX_WIDTH } from './shared';
 import { notify } from '../platform';
@@ -21,6 +23,16 @@ interface Props {
 }
 
 const PRICE = '£14.99';
+
+/** Open a static legal page. On web these live at the site root (/terms.html …). */
+function openLegal(page: 'terms' | 'privacy' | 'refund') {
+  const path = `/${page}.html`;
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    window.open(path, '_blank', 'noopener');
+    return;
+  }
+  Linking.openURL(`https://sortedwill.co.uk${path}`).catch(() => {});
+}
 
 /**
  * Collects where to post the pack and the customer's email, then hands off to
@@ -142,6 +154,22 @@ export default function PrintPostModal({ visible, willId, defaultAddress, onClos
             <TouchableOpacity style={styles.cancel} onPress={onClose} disabled={busy}>
               <Text style={styles.cancelText}>Not now</Text>
             </TouchableOpacity>
+
+            <View style={styles.legalRow}>
+              <Text style={styles.legalText}>By paying you agree to our </Text>
+              <TouchableOpacity onPress={() => openLegal('terms')}>
+                <Text style={styles.legalLink}>Terms</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalText}>, </Text>
+              <TouchableOpacity onPress={() => openLegal('refund')}>
+                <Text style={styles.legalLink}>Refund Policy</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalText}> and </Text>
+              <TouchableOpacity onPress={() => openLegal('privacy')}>
+                <Text style={styles.legalLink}>Privacy Policy</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalText}>.</Text>
+            </View>
           </ScrollView>
         </View>
       </View>
@@ -183,5 +211,23 @@ const styles = StyleSheet.create({
     color: C.textLight,
     fontSize: 15,
     fontWeight: '600',
+  },
+  legalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  legalText: {
+    fontSize: 12,
+    color: C.textLight,
+    lineHeight: 18,
+  },
+  legalLink: {
+    fontSize: 12,
+    color: C.primary,
+    fontWeight: '600',
+    lineHeight: 18,
+    textDecorationLine: 'underline',
   },
 });
