@@ -254,3 +254,39 @@ exist; confirm via hello@intelliprint.net. Robust guardrails regardless:
    refusing > N letters/day as a circuit-breaker independent of Intelliprint.
 3. Card note: Luke is retiring a Mastercard — confirm which card funds the
    top-up; route to the Monzo business account (deductible business cost).
+
+---
+
+## ✅ BUILT + WORKER DEPLOYED (10-Sep-2026)
+
+Feature is built end-to-end and the Cloudflare Worker is **live** (test mode).
+
+**Worker:** `https://sortedwill-print.nanoluke521.workers.dev` (Cloudflare account
+`nanoluke521`, acct id `1a675faf…`). Deployed with the on-file
+`nano-workers-kv-2026-07-05` token. KV namespace `ORDERS` =
+`a6ef131fd9c0480187a2e43efb43a267`. Secrets set: `STRIPE_SECRET_KEY` (test),
+`INTELLIPRINT_API_KEY`. Code = `worker/` (see worker/README.md).
+
+**Verified live against the deployed worker:**
+- `GET /health` → `{ok:true, testmode:true}` (testmode inferred from the sk_test_ key).
+- `POST /order` → real Stripe Checkout session + hosted URL.
+- `POST /send` on an **unpaid** session → `402 not_paid` — the payment gate holds.
+
+**App side (committed on branch `print-and-post`, NOT yet merged/deployed):**
+- `src/print.ts` client (default API URL points at the live worker).
+- `src/screens/PrintPostModal.tsx` address+email sheet, £14.99, cancellation notice.
+- `Review.tsx` "Print & post — £14.99" button wired + gated on `blockingProblems`.
+- `App.tsx` paid-return handler regenerates the PDF on-device and streams it once.
+
+**Still to do before a real (live) sale:**
+1. Merge `print-and-post` → build/deploy the web app to sortedwill.co.uk.
+2. Register the two webhooks and set their signing secrets (only needed for the
+   dispatch email + unclaimed-refund sweep — the core pay→print flow works without):
+   - Stripe → `…/stripe-webhook`, event `checkout.session.completed` → `STRIPE_WEBHOOK_SECRET`.
+   - Intelliprint (Svix) at account.intelliprint.net/api_keys → `…/print-webhook`,
+     event `letter.updated` → `INTELLIPRINT_WEBHOOK_SECRET`.
+3. (Optional) `RESEND_API_KEY` to actually send the "your will is in the post" email.
+4. Go-live: restricted **live** Stripe key + `TEST_MODE=false`; top up Intelliprint
+   on the Monzo card; **rotate the Stripe test + Intelliprint keys pasted in chat**;
+   publish terms/refund/privacy pages.
+5. Full paid smoke test (browser-bot clicks Stripe's test card end to end).
