@@ -73,8 +73,11 @@ async function handleOrder(request, env) {
 
   const params = new URLSearchParams();
   params.set('mode', 'payment');
-  params.set('success_url', `${appOrigin(env)}/paid?session_id={CHECKOUT_SESSION_ID}`);
-  params.set('cancel_url', `${appOrigin(env)}/print`);
+  // Redirect back to the site ROOT with the session id in the query. The app
+  // reads ?session_id off any path, and root is the one URL guaranteed to exist
+  // on a static SPA host (GitHub Pages 404s deep paths like /paid).
+  params.set('success_url', `${appOrigin(env)}/?session_id={CHECKOUT_SESSION_ID}`);
+  params.set('cancel_url', `${appOrigin(env)}/`);
   params.set('line_items[0][price_data][currency]', 'gbp');
   params.set('line_items[0][price_data][product_data][name]', 'Printed & posted will pack');
   params.set('line_items[0][price_data][unit_amount]', String(amount));
