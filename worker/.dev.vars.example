@@ -1,0 +1,8 @@
+# Copy to .dev.vars for `wrangler dev`. .dev.vars is gitignored — never commit real keys.
+STRIPE_SECRET_KEY=sk_test_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+INTELLIPRINT_API_KEY=key_xxx
+INTELLIPRINT_WEBHOOK_SECRET=whsec_xxx
+# Optional — enables the "your will is in the post" email on dispatch:
+# RESEND_API_KEY=re_xxx
+# FROM_EMAIL=hello@sortedwill.co.uk

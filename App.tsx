@@ -24,6 +24,14 @@ import {
   WillSummary,
 } from './src/storage';
 import { notify } from './src/platform';
+import { generateWillPdf } from './src/pdfGen';
+import {
+  peekReturnedSession,
+  clearReturnParam,
+  readPending,
+  clearPending,
+  submitPrint,
+} from './src/print';
 import { hasMinorChildren } from './src/family';
 import { syncLinkedBeneficiaries } from './src/people';
 import { StepKey } from './src/validation';
@@ -269,6 +277,7 @@ function Wizard({ id, onHome }: WizardProps) {
           )}
           {step === STEP.review && (
             <Review
+              id={id}
               data={data}
               onEdit={goToStep}
               onBack={prevStep}
@@ -292,6 +301,45 @@ export default function App() {
       setReady(true);
     });
   }, []);
+
+  // Coming back from Stripe Checkout (web). The PDF was never uploaded before
+  // payment — it is regenerated here from the still-stored will and streamed to
+  // the printer. The worker is idempotent per session, so a refresh mid-flow
+  // cannot print twice; we only strip the ?session_id once submission succeeds.
+  useEffect(() => {
+    if (!ready) return;
+    const sessionId = peekReturnedSession();
+    if (!sessionId) return;
+    (async () => {
+      const pending = await readPending();
+      if (!pending || pending.sessionId !== sessionId) {
+        clearReturnParam();
+        await clearPending();
+        return;
+      }
+      try {
+        const willData = loadWillData(pending.willId);
+        const bytes = await generateWillPdf(willData);
+        const res = await submitPrint({ sessionId, bytes, address: pending.address });
+        clearReturnParam();
+        await clearPending();
+        notify(
+          res.testmode
+            ? 'Test order complete — submitted in test mode, so nothing was charged and nothing is posted.'
+            : 'Payment received. Your will is being printed and will be posted first-class. We keep no copy.',
+          res.testmode ? 'Test order complete' : 'On its way',
+        );
+      } catch (err) {
+        // Leave ?session_id and the pending record in place: a reload retries,
+        // and the worker will not double-charge or double-print.
+        console.error('print completion failed', err);
+        notify(
+          'Your payment went through, but submitting your will for printing did not complete. Reload this page to try again — you will not be charged again.',
+          'Almost there',
+        );
+      }
+    })();
+  }, [ready]);
 
   function open(id: string) {
     setActiveId(id);

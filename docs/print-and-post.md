@@ -181,3 +181,76 @@ Nothing here can be done from my container.
 7. **Publish** the terms, refund and privacy pages once I have drafted them —
    they need to be live before the first sale, not after it.
 8. **HMRC CWF1** when the first payment lands.
+
+---
+
+## PROVIDER CHOSEN: Intelliprint (verified 9-Sep-2026)
+
+Docmail is superseded. Intelliprint (intelliprint.**net**, not .co.uk) is REST,
+pay-as-you-go, and has the webhook we need. API key is live and **verified 200**
+against `GET /v1/prints` from this container. Key stored gitignored at
+`projects/will-writer/.intelliprint-key` (INTELLIPRINT_API_KEY=...).
+
+**API (all verified from docs + live ping):**
+- Base: `https://api.intelliprint.net/v1`
+- Auth: `Authorization: Bearer <key>` (raw key also accepted). No separate
+  test key — use the `testmode` flag.
+- Create letter: `POST /v1/prints`, **multipart/form-data**:
+  - `type=letter`
+  - `file=@will.pdf` (accepts PDF, Word, RTF, PNG, JPEG) — OR `content=<text>`
+  - `recipients[0][address][name|line|postcode|country]`
+  - `postage[service]=uk_first_class` (options below)
+  - `confirmed` — `false` = draft, **no charge**, editable 30 days; `true` =
+    submit for print+post
+  - `testmode` — `true` = no charge, hidden from dashboard (dev)
+- Postage services: `uk_second_class`, `uk_first_class`,
+  `uk_first_class_signed_for`, `uk_second_class_signed_for`, `tracked_24`,
+  `tracked_48`, `uk_special_delivery(_9am)`, `international`.
+- **No balance/credit endpoint** — top up or use pay-later billing; payment
+  failure returns error type/code `payment_error`.
+
+**Webhooks (Svix — signed, retried, replayable):**
+- Single event: **`letter.updated`** — status transitions cover
+  printed / dispatched / delivered / returned. (Also `mailing_list.addresses_validated`.)
+- Registered in the account UI at `https://account.intelliprint.net/api_keys`,
+  NOT via API. Svix gives signature verification for the worker.
+
+**✅ DECIDED 9-Sep — "posted is fine" (Luke).** Default postage = `uk_first_class`,
+`confirmed:true`; customer gets a **dispatched** confirmation only, no delivered
+tracking, no signed/tracked upsell. Original reasoning kept below.
+
+**"delivered" confirmation vs postage class.** Plain
+`uk_first_class`/`uk_second_class` are **untracked** (docs: Tracking = No), so a
+reliable `delivered` status almost certainly will NOT fire for them — only
+`printed`/`dispatched` will. If Luke's "tell the customer it's delivered"
+requirement is hard, we must default to a **tracked** service (`tracked_48`
+cheapest with tracking, or `_signed_for`) — costs more per item. Otherwise ship
+1st class and only promise a "posted/dispatched" confirmation.
+
+**Revised build (unchanged shape, Intelliprint swapped in):**
+1. Cloudflare Worker: `/order` (Stripe Checkout), `/stripe-webhook`
+   (payment ok → generate PDF → `POST /v1/prints` confirmed:true), `/print-webhook`
+   (Svix `letter.updated` → email customer on dispatched/delivered).
+2. App: address screen + gated "print & post" button behind the £-order.
+3. Zero-storage: PDF generated at send time, not persisted.
+
+**Still needed from Luke:** Stripe restricted key + Cloudflare Workers token;
+postage-class decision above; top up Intelliprint or enable pay-later.
+
+## Spend-safety (Luke asked 9-Sep — "billing limit just in case")
+
+Intelliprint's billing help docs are unpublished ("guides on their way"), so I
+could not confirm a native hard spend-cap setting. Their category list DOES
+name "account credit, invoicing, VAT, subaccount spend controls" — so a cap may
+exist; confirm via hello@intelliprint.net. Robust guardrails regardless:
+
+1. **Keep the account on PREPAY (account credit), NOT pay-later/invoicing.** The
+   topped-up balance is then the hard ceiling — worst case, runaway code can
+   only spend the balance, then `payment_error` and it stops. Real safety net,
+   needs no feature from them.
+2. **In our Worker:** only ever send `confirmed:true` from inside the
+   Stripe-webhook after a *successful* payment → one paid order = one letter.
+   Dev uses `testmode:true` (no charge). Add a daily counter in the Worker (KV)
+   refusing > N letters/day as a circuit-breaker independent of Intelliprint.
+3. Card note: Luke is retiring a Mastercard — confirm which card funds the
+   top-up; route to the Monzo business account (deductible business cost).

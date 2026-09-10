@@ -1,0 +1,31 @@
+name = "sortedwill-print"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# KV: idempotency flags, dispatch-email map, daily circuit-breaker counter.
+# Create once:  wrangler kv namespace create ORDERS
+# then paste the id below.
+[[kv_namespaces]]
+binding = "ORDERS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Non-secret config. Secrets (keys) are set with `wrangler secret put`, NOT here.
+[vars]
+APP_ORIGIN = "https://sortedwill.co.uk"
+PRICE_PENCE = "1499"
+POSTAGE_SERVICE = "uk_first_class"
+DAILY_CAP = "50"
+# TEST_MODE unset -> inferred from the Stripe key (sk_test_ => test).
+# Set "false" only once live keys are in place.
+
+# Auto-refund sweep for paid-but-unclaimed sessions (optional; handler TODO).
+# [triggers]
+# crons = ["0 * * * *"]
+
+# ---- Secrets to set (wrangler secret put <NAME>) ----
+#   STRIPE_SECRET_KEY            sk_test_... then sk_live_ (restricted) at go-live
+#   STRIPE_WEBHOOK_SECRET        whsec_... from the Stripe /stripe-webhook endpoint
+#   INTELLIPRINT_API_KEY         key_...
+#   INTELLIPRINT_WEBHOOK_SECRET  whsec_... from account.intelliprint.net Svix endpoint
+#   RESEND_API_KEY               (optional) enables the dispatch-confirmation email
+#   FROM_EMAIL                   hello@sortedwill.co.uk (optional; default set in code)

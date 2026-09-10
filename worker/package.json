@@ -1,0 +1,14 @@
+{
+  "name": "sortedwill-print",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zero-storage print-and-post worker for sortedwill: Stripe Checkout -> Intelliprint.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.80.0"
+  }
+}

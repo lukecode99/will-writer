@@ -11,6 +11,8 @@ import { notify, deliverPdf } from '../platform';
 // underlying tslib problem is fixed properly by the resolver alias in
 // metro.config.js, so the lazy load bought nothing.
 import { generateWillPdf, WillIncompleteError } from '../pdfGen';
+import PrintPostModal from './PrintPostModal';
+import { splitAddress } from '../print';
 import {
   StepKey,
   WillProblem,
@@ -21,6 +23,7 @@ import {
 } from '../validation';
 
 interface Props {
+  id: string;
   data: WillData;
   onEdit: (step: StepKey) => void;
   onBack: () => void;
@@ -233,8 +236,9 @@ function chainSteps(b: Beneficiary, data: WillData): string[] {
   return steps;
 }
 
-export default function Review({ data, onEdit, onBack, onRestart }: Props) {
+export default function Review({ id, data, onEdit, onBack, onRestart }: Props) {
   const [generating, setGenerating] = useState(false);
+  const [showPrintPost, setShowPrintPost] = useState(false);
 
   // Recomputed on every render rather than held in state: the review screen is
   // the one place that must never be describing an older version of the answers
@@ -268,22 +272,15 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
     }
   }
 
-  async function handlePrintService() {
+  function handlePrintService() {
+    // Same gate as generation: we do not post drafts. The button is disabled
+    // while anything is blocking; this repeats the check because a disabled
+    // button is only a presentation detail.
     if (blocking.length > 0) {
       notify('There are still some things to fix before your will can be printed. They are listed at the top of this page.');
       return;
     }
-    // Honest about the state of the feature BEFORE doing anything. The old
-    // wording said "Sending to print service" and then generated the PDF, so
-    // the user reasonably believed a paper will was on its way — for a
-    // document whose whole value is the signed paper copy.
-    notify(
-      Platform.OS === 'web'
-        ? 'The print & post service is not available yet. We will download your PDF now so you can print and sign it yourself.'
-        : 'The print & post service is not available yet. We will open your PDF now — choose Print or Save to Files, then sign the paper copy.',
-      'Not available yet',
-    );
-    await handleGenerate();
+    setShowPrintPost(true);
   }
 
   // A switch rather than a ternary chain, so that adding a fifth substitution
@@ -306,6 +303,7 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
   };
 
   return (
+    <>
     <ScrollView contentContainerStyle={shared.scrollContent}>
       <Text style={shared.heading}>Review Your Will</Text>
       <Text style={shared.sub}>Check everything below before generating your PDF. Tap Edit to change any section.</Text>
@@ -509,7 +507,7 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
         onPress={handlePrintService}
         disabled={generating || !canGenerate}
       >
-        <Text style={shared.secondaryBtnText}>📬  Send to print service</Text>
+        <Text style={shared.secondaryBtnText}>📬  Print &amp; post my will — £14.99</Text>
       </TouchableOpacity>
 
       {!canGenerate ? (
@@ -532,6 +530,13 @@ export default function Review({ data, onEdit, onBack, onRestart }: Props) {
         <Text style={{ color: C.textLight, fontSize: 13 }}>Back to my wills</Text>
       </TouchableOpacity>
     </ScrollView>
+    <PrintPostModal
+      visible={showPrintPost}
+      willId={id}
+      defaultAddress={splitAddress(data.fullName, data.address)}
+      onClose={() => setShowPrintPost(false)}
+    />
+    </>
   );
 }
 
