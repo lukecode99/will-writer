@@ -290,3 +290,33 @@ Feature is built end-to-end and the Cloudflare Worker is **live** (test mode).
    on the Monzo card; **rotate the Stripe test + Intelliprint keys pasted in chat**;
    publish terms/refund/privacy pages.
 5. Full paid smoke test (browser-bot clicks Stripe's test card end to end).
+
+---
+
+## ✅ FULL PAID SMOKE TEST + LEGAL PAGES (10-Sep-2026)
+
+**End-to-end paid flow verified** (Stripe test mode, Intelliprint test mode — no
+money, no real post):
+- browser-bot completed a real Stripe Checkout with test card 4242…4242 →
+  Stripe issued the redirect (session `cs_test_a1nU…`).
+- `POST /send` against the **paid** session → `{ok:true, letterId:print_…, testmode:true}`
+  — the full chain (payment re-check → PDF → Intelliprint letter) works.
+- **Double-print bug found & fixed.** A repeat `/send` (browser refresh) created a
+  *second* letter, because the `fulfilled:<session>` flag was written
+  fire-and-forget AFTER the print call and never registered with `waitUntil`.
+  Fixed: reserve the session in KV (`RESERVED`) BEFORE printing, awaited; release
+  on print failure; finalise with the real letterId, awaited. In-flight repeat →
+  `409 processing`; completed → same letterId + `reused:true`. **Re-tested live:
+  repeat submit returns the same letter, no second print.**
+- **GitHub Pages redirect fix.** Site is on GH Pages, which 404s deep paths, so
+  `/paid?session_id` never loaded the app. Success/cancel URLs now point at the
+  site **root** — the paid-return handler reads `?session_id` off any path.
+
+**Legal pages** (committed, served from `public/` → live at the site root once the
+app is redeployed): `/terms.html`, `/refund.html`, `/privacy.html`. Linked from the
+payment sheet. Each carries a placeholder for the **trader identity + business
+address** — Luke to supply before go-live (UK Consumer Contracts Regs require it).
+
+**Remaining before a real sale (unchanged core): merge+deploy the app, register the
+two webhooks, drop in the trader address, live Stripe key + `TEST_MODE=false`, top up
+Intelliprint, rotate the pasted keys.**
