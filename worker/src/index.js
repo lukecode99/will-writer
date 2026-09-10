@@ -26,6 +26,10 @@
 
 const IP_BASE = 'https://api.intelliprint.net/v1';
 
+// Sentinel stored at fulfilled:<session> while a /send is mid-print, so a
+// concurrent or repeat request cannot start a second letter for the same order.
+const RESERVED = 'RESERVED';
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -40,7 +44,7 @@ export default {
         return withCors(await handleOrder(request, env), cors);
       }
       if (url.pathname === '/send' && request.method === 'POST') {
-        return withCors(await handleSend(request, env), cors);
+        return withCors(await handleSend(request, env, ctx), cors);
       }
       if (url.pathname === '/stripe-webhook' && request.method === 'POST') {
         return await handleStripeWebhook(request, env);
@@ -95,7 +99,7 @@ async function handleOrder(request, env) {
 
 /* ------------------------------------------------------------------- /send */
 
-async function handleSend(request, env) {
+async function handleSend(request, env, ctx) {
   const form = await request.formData();
   const sessionId = form.get('sessionId');
   const file = form.get('file');
@@ -114,10 +118,18 @@ async function handleSend(request, env) {
     return json({ error: 'incomplete_address' }, 400);
   }
 
-  // 1) Idempotency: if this session already produced a letter, return it.
-  const already = await env.ORDERS.get(`fulfilled:${sessionId}`);
-  if (already) {
+  // 1) Idempotency: one letter per paid session, ever. `fulfilled:<session>`
+  //    holds either the letterId (done) or the sentinel RESERVED (a submit is
+  //    in flight). A browser refresh or a double-tap must never print twice.
+  const fkey = `fulfilled:${sessionId}`;
+  const already = await env.ORDERS.get(fkey);
+  if (already && already !== RESERVED) {
     return json({ ok: true, letterId: already, reused: true }, 200);
+  }
+  if (already === RESERVED) {
+    // A concurrent request already owns this session and is mid-print. Tell the
+    // client to retry shortly; it will then get the letterId from the branch above.
+    return json({ error: 'processing' }, 409);
   }
 
   // 2) Payment gate — trust Stripe, not the client.
@@ -129,6 +141,14 @@ async function handleSend(request, env) {
     // A session whose amount does not match our price is not one we created.
     return json({ error: 'amount_mismatch' }, 402);
   }
+
+  // 2b) Reserve the session BEFORE the slow Intelliprint call, and AWAIT the
+  //     write so a subsequent request sees it. This closes the double-print
+  //     window that a fire-and-forget post-print write left open. (KV is only
+  //     eventually consistent across regions, so this narrows — not eliminates
+  //     — a truly simultaneous multi-colo race; a Durable Object lock would be
+  //     the fully-atomic upgrade if that ever proves necessary.)
+  await env.ORDERS.put(fkey, RESERVED, { expirationTtl: 60 * 60 * 24 * 90 });
 
   // 3) Circuit-breaker independent of Intelliprint's own controls.
   const day = utcDay();
@@ -159,20 +179,24 @@ async function handleSend(request, env) {
   const ipJson = await ipRes.json().catch(() => ({}));
   if (!ipRes.ok || !ipJson.id) {
     console.error('intelliprint submit failed', ipRes.status, JSON.stringify(ipJson).slice(0, 500));
-    // Payment succeeded but printing did not: flag for refund/retry. We do NOT
-    // mark the session fulfilled, so the app can safely retry /send.
+    // Payment succeeded but printing did not. Release the reservation so the
+    // app can safely retry /send; we never leave a paid order un-printable.
+    await env.ORDERS.delete(fkey).catch(() => {});
     return json({ error: 'print_failed', code: (ipJson.error && ipJson.error.code) || null }, 502);
   }
 
   const letterId = ipJson.id;
 
-  // 5) Persist the two flags. Email (for the dispatch note) comes off the
-  //    Stripe session, not the will. Best-effort — a KV miss must not fail the
-  //    order, since the letter is already committed at Intelliprint.
+  // 5) Finalise the idempotency flag with the real letterId — AWAITED, so a
+  //    later retry reads the letter, not the RESERVED sentinel or an empty key.
+  await env.ORDERS.put(fkey, letterId, { expirationTtl: 60 * 60 * 24 * 90 });
+
+  // The rest is best-effort and must not fail the order (the letter is already
+  // committed at Intelliprint): daily counter + the email for the dispatch note,
+  // which comes off the Stripe session, never the will.
   const email =
     (session.customer_details && session.customer_details.email) || session.customer_email || null;
-  ctxWaitUntil(env, [
-    env.ORDERS.put(`fulfilled:${sessionId}`, letterId, { expirationTtl: 60 * 60 * 24 * 90 }),
+  ctxWaitUntil(ctx, [
     env.ORDERS.put(countKey, String(count + 1), { expirationTtl: 60 * 60 * 48 }),
     email
       ? env.ORDERS.put(`letter:${letterId}`, JSON.stringify({ email }), {
@@ -405,7 +429,10 @@ function bytesToBase64(bytes) {
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
-// waitUntil isn't available on the bare env; pass through Promise.all if not.
-function ctxWaitUntil(_env, promises) {
-  return Promise.all(promises).catch(err => console.error('kv write failed', err));
+// Register best-effort work so it completes after the response is returned.
+// Falls back to a fire-and-forget Promise.all if no execution context is given.
+function ctxWaitUntil(ctx, promises) {
+  const work = Promise.all(promises).catch(err => console.error('kv write failed', err));
+  if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(work);
+  return work;
 }
