@@ -320,3 +320,13 @@ address** — Luke to supply before go-live (UK Consumer Contracts Regs require 
 **Remaining before a real sale (unchanged core): merge+deploy the app, register the
 two webhooks, drop in the trader address, live Stripe key + `TEST_MODE=false`, top up
 Intelliprint, rotate the pasted keys.**
+
+### Supplier billing (Intelliprint) — Direct Debit (10-Sep-2026)
+Intelliprint bills the account holder (Luke) for actual print+postage via a **Direct
+Debit mandate** run through Stripe (debits show as "Stripe" on the statement). This is
+the **cost side**, separate from the £14.99 card payment customers make.
+- Mandate ref `I65WVIHS-INTLIPRNT`; Monzo **04-00-06 / …3450** (sole-trader business acct).
+- No charge until letters are actually printed. These debits are a SortedWill running
+  cost → **sole-trader deductible** (tag when they land).
+- Runaway protection = worker `DAILY_CAP` (currently 50 letters/day) — the billing backstop.
+- Per-will economics: £14.99 in (card) − Intelliprint per-letter cost − Stripe fee (~20p+1.5%).
