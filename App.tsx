@@ -23,7 +23,7 @@ import {
   deleteWill,
   WillSummary,
 } from './src/storage';
-import { notify } from './src/platform';
+import { notify, deliverPdf } from './src/platform';
 import { generateWillPdf } from './src/pdfGen';
 import {
   peekReturnedSession,
@@ -31,6 +31,8 @@ import {
   readPending,
   clearPending,
   submitPrint,
+  verifyDownload,
+  unlockDownload,
 } from './src/print';
 import { hasMinorChildren } from './src/family';
 import { syncLinkedBeneficiaries } from './src/people';
@@ -320,7 +322,30 @@ export default function App() {
       try {
         const willData = loadWillData(pending.willId);
         const bytes = await generateWillPdf(willData);
-        const res = await submitPrint({ sessionId, bytes, address: pending.address });
+
+        if (pending.product === 'download') {
+          // Paid digital download: confirm payment, then deliver on-device.
+          // Nothing is uploaded and no copy is kept.
+          const res = await verifyDownload(sessionId);
+          await unlockDownload(pending.willId);
+          await deliverPdf(
+            bytes,
+            `Will_${willData.fullName.replace(/\s+/g, '_') || 'Draft'}.pdf`,
+          );
+          clearReturnParam();
+          await clearPending();
+          notify(
+            res.testmode
+              ? 'Test order complete — test mode, so nothing was charged. Your download is unlocked.'
+              : 'Payment received — your will has downloaded, and you can download it again any time.',
+            res.testmode ? 'Test order complete' : 'Downloaded',
+          );
+          return;
+        }
+
+        const res = await submitPrint({ sessionId, bytes, address: pending.address! });
+        // A print purchase also unlocks the download for that will (no double charge).
+        await unlockDownload(pending.willId);
         clearReturnParam();
         await clearPending();
         notify(

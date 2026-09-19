@@ -43,6 +43,9 @@ export default {
       if (url.pathname === '/order' && request.method === 'POST') {
         return withCors(await handleOrder(request, env), cors);
       }
+      if (url.pathname === '/verify' && request.method === 'POST') {
+        return withCors(await handleVerify(request, env), cors);
+      }
       if (url.pathname === '/send' && request.method === 'POST') {
         return withCors(await handleSend(request, env, ctx), cors);
       }
@@ -68,8 +71,11 @@ export default {
 
 async function handleOrder(request, env) {
   const body = await request.json().catch(() => ({}));
-  // Price is fixed server-side. A client-supplied amount is ignored entirely.
-  const amount = pricePence(env);
+  // Two products, both priced server-side. A client-supplied amount is ignored.
+  //   print    (£14.99) -> pack is printed and posted via Intelliprint (/send)
+  //   download (£10.00) -> PDF is generated & downloaded on-device (/verify)
+  const product = body.product === 'download' ? 'download' : 'print';
+  const amount = product === 'download' ? downloadPence(env) : pricePence(env);
 
   const params = new URLSearchParams();
   params.set('mode', 'payment');
@@ -79,25 +85,63 @@ async function handleOrder(request, env) {
   params.set('success_url', `${appOrigin(env)}/?session_id={CHECKOUT_SESSION_ID}`);
   params.set('cancel_url', `${appOrigin(env)}/`);
   params.set('line_items[0][price_data][currency]', 'gbp');
-  params.set('line_items[0][price_data][product_data][name]', 'Printed & posted will pack');
+  params.set(
+    'line_items[0][price_data][product_data][name]',
+    product === 'download' ? 'Will PDF download' : 'Printed & posted will pack',
+  );
   params.set('line_items[0][price_data][unit_amount]', String(amount));
   params.set('line_items[0][quantity]', '1');
   params.set('metadata[app]', 'sortedwill');
+  params.set('metadata[product]', product);
   params.set('payment_intent_data[metadata][app]', 'sortedwill');
   // We need the customer's email for the dispatch confirmation. Checkout
   // collects it; we read it back off the session at /send time.
   if (body.email && looksLikeEmail(body.email)) {
     params.set('customer_email', body.email);
   }
-  // Consumer-Contracts notice: personalised goods lose the 14-day cancel right,
-  // and the notice must be shown before ordering. Stripe custom text does that.
+  // Consumer-Contracts notice: personalised / digital content loses the 14-day
+  // cancel right once fulfilled, and the notice must be shown before ordering.
   params.set(
     'custom_text[submit][message]',
-    'Your will is printed to your exact specification, so the 14-day cancellation right does not apply once it goes to print. We refund in full if it has not yet printed.',
+    product === 'download'
+      ? 'This is a personalised digital download. By continuing you agree it is prepared and made available to you immediately, so the 14-day cancellation right does not apply once the file is downloaded.'
+      : 'Your will is printed to your exact specification, so the 14-day cancellation right does not apply once it goes to print. We refund in full if it has not yet printed.',
   );
 
   const session = await stripe(env, 'POST', '/v1/checkout/sessions', params);
   return json({ url: session.url, sessionId: session.id }, 200);
+}
+
+/* ----------------------------------------------------------------- /verify */
+
+// Download orders never upload the PDF — it is generated and saved on-device.
+// This just confirms, server-side, that the session was paid at the DOWNLOAD
+// price, so the app only unlocks the download after real money moved. Read-only
+// and idempotent: it stores nothing and can be called on every return/reload.
+async function handleVerify(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const sessionId = body.sessionId;
+  if (!sessionId || typeof sessionId !== 'string') {
+    return json({ error: 'missing_session' }, 400);
+  }
+  // A bogus, expired, or wrong-mode session id makes Stripe 404, which the
+  // stripe() helper turns into a throw. Treat any lookup failure as "not paid"
+  // rather than a 500 — this endpoint is safe to hit on any /paid reload.
+  let session;
+  try {
+    session = await stripe(env, 'GET', `/v1/checkout/sessions/${sessionId}`);
+  } catch (err) {
+    return json({ error: 'not_paid' }, 402);
+  }
+  if (!session || session.payment_status !== 'paid') {
+    return json({ error: 'not_paid' }, 402);
+  }
+  // Bind the session to the download price: a £10 session can never be spent as
+  // a £14.99 print, and vice-versa (see /send's own amount check).
+  if (session.amount_total !== downloadPence(env) || session.currency !== 'gbp') {
+    return json({ error: 'amount_mismatch' }, 402);
+  }
+  return json({ ok: true, testmode: isTestMode(env) }, 200);
 }
 
 /* ------------------------------------------------------------------- /send */
@@ -401,6 +445,10 @@ function appOrigin(env) {
 function pricePence(env) {
   const n = parseInt(env.PRICE_PENCE || '1499', 10);
   return Number.isFinite(n) && n > 0 ? n : 1499;
+}
+function downloadPence(env) {
+  const n = parseInt(env.DOWNLOAD_PENCE || '1000', 10);
+  return Number.isFinite(n) && n > 0 ? n : 1000;
 }
 function dailyCap(env) {
   const n = parseInt(env.DAILY_CAP || '50', 10);

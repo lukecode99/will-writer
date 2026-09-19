@@ -12,7 +12,12 @@ import { notify, deliverPdf } from '../platform';
 // metro.config.js, so the lazy load bought nothing.
 import { generateWillPdf, WillIncompleteError } from '../pdfGen';
 import PrintPostModal from './PrintPostModal';
-import { splitAddress } from '../print';
+import {
+  splitAddress,
+  createOrder,
+  beginCheckout,
+  isDownloadUnlocked,
+} from '../print';
 import {
   StepKey,
   WillProblem,
@@ -239,6 +244,16 @@ function chainSteps(b: Beneficiary, data: WillData): string[] {
 export default function Review({ id, data, onEdit, onBack, onRestart }: Props) {
   const [generating, setGenerating] = useState(false);
   const [showPrintPost, setShowPrintPost] = useState(false);
+  // Whether this will has already been paid for on this device. A paid print or
+  // a paid download both unlock free re-downloads (see App paid-return handler),
+  // so once someone has paid anything for this will the button reverts to free.
+  const [unlocked, setUnlocked] = useState(false);
+
+  React.useEffect(() => {
+    let live = true;
+    isDownloadUnlocked(id).then(u => { if (live) setUnlocked(u); }).catch(() => {});
+    return () => { live = false; };
+  }, [id]);
 
   // Recomputed on every render rather than held in state: the review screen is
   // the one place that must never be describing an older version of the answers
@@ -256,6 +271,39 @@ export default function Review({ id, data, onEdit, onBack, onRestart }: Props) {
       notify('There are still some things to fix before your will can be created. They are listed at the top of this page.');
       return;
     }
+    // Already paid for this will on this device → deliver the file, no charge.
+    if (unlocked) {
+      await downloadNow();
+      return;
+    }
+
+    // Not paid yet. The £10 download is a paid digital good, so it goes through
+    // Stripe on web. On web the checkout redirect navigates the page away and
+    // the paid-return handler in App regenerates + delivers the PDF and unlocks
+    // future free re-downloads.
+    if (Platform.OS === 'web') {
+      setGenerating(true);
+      try {
+        const { url, sessionId } = await createOrder({ product: 'download' });
+        await beginCheckout({ willId: id, sessionId, product: 'download' }, url);
+        // Web has navigated away; nothing after this runs.
+      } catch (err) {
+        console.error('download checkout failed', err);
+        notify('Could not start checkout just now. Please try again in a moment.');
+        setGenerating(false);
+      }
+      return;
+    }
+
+    // iOS: the £10 download must be sold through Apple In-App Purchase (Apple
+    // requires it for digital content). That ships in a dedicated native build
+    // once the Paid Applications Agreement is live; until then TestFlight builds
+    // deliver the download free. Web is the paid path today.
+    await downloadNow();
+  }
+
+  /** Regenerate the will PDF and hand it to the OS/browser to save. */
+  async function downloadNow() {
     setGenerating(true);
     try {
       const bytes = await generateWillPdf(data);
@@ -498,7 +546,11 @@ export default function Review({ id, data, onEdit, onBack, onRestart }: Props) {
       >
         {generating
           ? <ActivityIndicator color="#fff" />
-          : <Text style={shared.primaryBtnText}>⬇️  Download Will PDF</Text>
+          : <Text style={shared.primaryBtnText}>
+              {unlocked || Platform.OS !== 'web'
+                ? '⬇️  Download Will PDF'
+                : '⬇️  Download Will PDF — £10'}
+            </Text>
         }
       </TouchableOpacity>
 

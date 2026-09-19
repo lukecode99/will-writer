@@ -25,24 +25,65 @@ export interface PostalAddress {
 }
 
 const PENDING_KEY = 'sortedwill.pendingPrint.v1';
+const DOWNLOAD_UNLOCK_PREFIX = 'sortedwill.downloadPaid.v1.';
+
+export type Product = 'print' | 'download';
 
 interface PendingPrint {
   willId: string;
   sessionId: string;
-  address: PostalAddress;
+  product: Product;
+  // Present for print orders; omitted for a paid download.
+  address?: PostalAddress;
 }
 
-/** Create a Stripe Checkout Session. Price is fixed by the worker, never here. */
-export async function createOrder(email?: string): Promise<{ url: string; sessionId: string }> {
+/** Create a Stripe Checkout Session. Price + product are fixed by the worker. */
+export async function createOrder(opts?: {
+  email?: string;
+  product?: Product;
+}): Promise<{ url: string; sessionId: string }> {
+  const body: Record<string, string> = {};
+  if (opts?.email) body.email = opts.email;
+  if (opts?.product) body.product = opts.product;
   const res = await fetch(`${PRINT_API}/order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(email ? { email } : {}),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`order failed (${res.status})`);
   const data = await res.json();
   if (!data.url || !data.sessionId) throw new Error('order returned no checkout url');
   return data;
+}
+
+/**
+ * Confirm a paid £10 download session with the worker (which re-checks Stripe).
+ * Unlike print, nothing is uploaded — the PDF is delivered on-device — so this
+ * is the payment gate before we regenerate and hand over the file.
+ */
+export async function verifyDownload(sessionId: string): Promise<{ ok: boolean; testmode?: boolean }> {
+  const res = await fetch(`${PRINT_API}/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    const err = new Error(data.error || `verify failed (${res.status})`);
+    (err as any).code = data.error;
+    throw err;
+  }
+  return data;
+}
+
+/* ---- download entitlement (per will, on this device) ---------------- */
+
+export async function unlockDownload(willId: string): Promise<void> {
+  await AsyncStorage.setItem(DOWNLOAD_UNLOCK_PREFIX + willId, '1');
+}
+
+export async function isDownloadUnlocked(willId: string): Promise<boolean> {
+  return (await AsyncStorage.getItem(DOWNLOAD_UNLOCK_PREFIX + willId)) === '1';
 }
 
 /**

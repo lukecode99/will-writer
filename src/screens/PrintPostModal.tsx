@@ -60,6 +60,13 @@ export default function PrintPostModal({ visible, willId, defaultAddress, onClos
   const emailOk = email.trim() === '' || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
   const canPay = name.trim() && line.trim() && postcodeOk && emailOk && !busy;
 
+  // Always available, including mid-checkout: if the user abandons the Stripe
+  // tab and comes back, this clears the spinner and closes the sheet.
+  function handleCancel() {
+    setBusy(false);
+    onClose();
+  }
+
   async function pay() {
     if (!canPay) return;
     setBusy(true);
@@ -70,9 +77,12 @@ export default function PrintPostModal({ visible, willId, defaultAddress, onClos
         postcode: postcode.trim().toUpperCase(),
         country: 'GB',
       };
-      const { url, sessionId } = await createOrder(email.trim() || undefined);
+      const { url, sessionId } = await createOrder({
+        email: email.trim() || undefined,
+        product: 'print',
+      });
       // Stash before leaving for Stripe so the browser round-trip can finish.
-      await beginCheckout({ willId, sessionId, address }, url);
+      await beginCheckout({ willId, sessionId, product: 'print', address }, url);
       // Native only reaches here (web has navigated away). Leave the sheet up so
       // the user can return and we can complete on next foreground.
     } catch (err) {
@@ -151,8 +161,8 @@ export default function PrintPostModal({ visible, willId, defaultAddress, onClos
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.cancel} onPress={onClose} disabled={busy}>
-              <Text style={styles.cancelText}>Not now</Text>
+            <TouchableOpacity style={styles.cancel} onPress={handleCancel}>
+              <Text style={styles.cancelText}>{busy ? 'Cancel' : 'Not now'}</Text>
             </TouchableOpacity>
 
             <View style={styles.legalRow}>

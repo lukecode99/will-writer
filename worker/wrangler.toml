@@ -13,6 +13,7 @@ id = "a6ef131fd9c0480187a2e43efb43a267"
 [vars]
 APP_ORIGIN = "https://sortedwill.co.uk"
 PRICE_PENCE = "1499"
+DOWNLOAD_PENCE = "1000"
 POSTAGE_SERVICE = "uk_first_class"
 DAILY_CAP = "50"
 # TEST_MODE unset -> inferred from the Stripe key (sk_test_ => test).
