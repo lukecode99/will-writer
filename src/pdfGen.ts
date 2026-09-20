@@ -476,6 +476,137 @@ function familyLines(data: WillData): string[] {
   return lines;
 }
 
+/**
+ * The branded "How to sign your will" one-pager. Inserted as page 1 (front) of
+ * every completed will so it appears in both the download and the printed pack.
+ *
+ * It has its own Helvetica look and 56pt margin (distinct from the will body's
+ * Times/65pt), and MUST be inserted *after* the page-furniture loop so it stays
+ * out of the "Page X of Y" numbering and the DRAFT watermark. Legal wording
+ * verified against Wills Act 1837 ss.9/15 + gov.uk/make-will by quality-worker
+ * and Perplexity (Sep 2026); every deviation errs on the safe/stricter side.
+ */
+async function drawSigningGuide(doc: PDFDocument): Promise<void> {
+  const GW = 595.28;
+  const GH = 841.89;
+  const GM = 56;
+  const NAVY = rgb(0.106, 0.227, 0.42); // #1B3A6B
+  const INK = rgb(0.13, 0.15, 0.19);
+  const MUTED = rgb(0.42, 0.45, 0.5);
+  const HAIR = rgb(0.8, 0.83, 0.88);
+  const BOXBG = rgb(0.95, 0.96, 0.98);
+  const BOXBAR = rgb(0.85, 0.3, 0.24);
+
+  const helv = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  const page = doc.insertPage(0, [GW, GH]);
+  const W = GW - GM * 2;
+  let y = GH - GM;
+
+  const wrap = (text: string, font: PDFFont, size: number, maxW: number): string[] => {
+    const words = text.split(/\s+/);
+    const out: string[] = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (font.widthOfTextAtSize(test, size) > maxW && cur) {
+        out.push(cur);
+        cur = w;
+      } else cur = test;
+    }
+    if (cur) out.push(cur);
+    return out;
+  };
+  const para = (
+    text: string,
+    opts: { font?: PDFFont; size?: number; color?: ReturnType<typeof rgb>; x?: number; maxW?: number; lh?: number; gap?: number } = {}
+  ) => {
+    const { font = helv, size = 10.5, color = INK, x = GM, maxW = W, lh = 14, gap: g = 0 } = opts;
+    for (const ln of wrap(text, font, size, maxW)) {
+      page.drawText(ln, { x, y, size, font, color });
+      y -= lh;
+    }
+    y -= g;
+  };
+
+  // Brand header
+  page.drawText('SortedWill', { x: GM, y: y - 4, size: 22, font: bold, color: NAVY });
+  page.drawText('sortedwill.co.uk', {
+    x: GW - GM - helv.widthOfTextAtSize('sortedwill.co.uk', 10),
+    y: y + 2, size: 10, font: helv, color: MUTED,
+  });
+  y -= 20;
+  page.drawRectangle({ x: GM, y, width: W, height: 3, color: NAVY });
+  y -= 30;
+
+  page.drawText('How to sign your will', { x: GM, y, size: 19, font: bold, color: INK });
+  y -= 24;
+  para(
+    'Your will is not legally valid until you sign it correctly, in front of the right witnesses. It takes five minutes. Follow these steps exactly.',
+    { color: MUTED, size: 11, lh: 15, gap: 14 }
+  );
+
+  const steps: [string, string][] = [
+    ['Get two witnesses together',
+      'Ask two adults (18 or over, of sound mind) to witness your signature. Both must be in the room with you at the same time — not one after the other.'],
+    ['Check your witnesses can act',
+      'A witness — or their husband, wife or civil partner — must not be anyone who inherits under this will. If they are, they lose their gift. Neighbours, friends or colleagues who gain nothing are ideal.'],
+    ['Sign and date it yourself, in front of both',
+      'Using the signature line at the end of the will, sign your normal signature and write the date while both witnesses watch. Use a single pen in blue or black ink.'],
+    ['Each witness signs while you watch',
+      'Straight after you — and while you are still watching — each witness signs and prints their full name and address on the same page. The simplest way to be sure is for all three of you to stay together until everyone has signed.'],
+    ['Do not change anything afterwards',
+      'Do not remove the staple, add notes, cross anything out or attach documents. Any alteration after signing can invalidate the whole will.'],
+    ['Store it safely and tell your executors',
+      'Keep the signed original flat, dry and secure, and make sure your executors know where to find it. Only the signed original has legal effect — a photocopy does not.'],
+  ];
+
+  const numR = 10;
+  steps.forEach(([title, body], i) => {
+    const cx = GM + numR;
+    const cy = y - numR + 2;
+    page.drawCircle({ x: cx, y: cy, size: numR, color: NAVY });
+    const n = String(i + 1);
+    page.drawText(n, { x: cx - bold.widthOfTextAtSize(n, 11) / 2, y: cy - 4, size: 11, font: bold, color: rgb(1, 1, 1) });
+    const tx = GM + numR * 2 + 10;
+    const tW = W - (numR * 2 + 10);
+    page.drawText(title, { x: tx, y: y - 3, size: 11.5, font: bold, color: NAVY });
+    y -= 16;
+    para(body, { x: tx, maxW: tW, size: 10, lh: 13.5, gap: 10 });
+  });
+
+  y -= 4;
+
+  // Warning callout box
+  const boxTitle = 'Who cannot witness your will';
+  const boxBody =
+    'Anyone who benefits from the will, and the husband, wife or civil partner of anyone who benefits. Under-18s. Your executors can witness it, but only if they inherit nothing.';
+  const boxLines = wrap(boxBody, helv, 10, W - 28);
+  const boxH = 18 + 16 + boxLines.length * 13.5 + 12;
+  const boxTop = y;
+  page.drawRectangle({ x: GM, y: boxTop - boxH, width: W, height: boxH, color: BOXBG });
+  page.drawRectangle({ x: GM, y: boxTop - boxH, width: 4, height: boxH, color: BOXBAR });
+  let by = boxTop - 18;
+  page.drawText(boxTitle, { x: GM + 16, y: by, size: 11, font: bold, color: BOXBAR });
+  by -= 16;
+  for (const ln of boxLines) {
+    page.drawText(ln, { x: GM + 16, y: by, size: 10, font: helv, color: INK });
+    by -= 13.5;
+  }
+
+  // Footer
+  page.drawLine({
+    start: { x: GM, y: GM + 20 }, end: { x: GW - GM, y: GM + 20 },
+    thickness: 0.75, color: HAIR,
+  });
+  page.drawText('SortedWill', { x: GM, y: GM + 6, size: 9, font: bold, color: NAVY });
+  const right = 'Your will follows on the next page.';
+  page.drawText(right, {
+    x: GW - GM - helv.widthOfTextAtSize(right, 9), y: GM + 6, size: 9, font: helv, color: MUTED,
+  });
+}
+
 export async function generateWillPdf(
   data: WillData,
   options: GenerateOptions = {}
@@ -1289,6 +1420,13 @@ export async function generateWillPdf(
       color: GRAY,
     });
   });
+
+  // The signing guide goes on the front of the finished will only — a draft is
+  // a preview that must not be signed, so it stays out of the numbering loop
+  // above and is prepended last, after the will's own pages are numbered.
+  if (!isDraft) {
+    await drawSigningGuide(doc);
+  }
 
   return doc.save();
 }
