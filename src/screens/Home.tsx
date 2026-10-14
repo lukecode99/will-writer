@@ -129,7 +129,7 @@ export default function Home({ wills, onCreate, onOpen, onDelete }: Props) {
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
         <View style={styles.headerInner}>
-          <Text style={styles.appTitle}>Will Writer</Text>
+          <Text style={styles.appTitle}>SortedWill</Text>
           <Text style={styles.appSub}>Wills for England and Wales</Text>
         </View>
       </View>
@@ -230,7 +230,7 @@ export default function Home({ wills, onCreate, onOpen, onDelete }: Props) {
           ) : null}
 
           <Text style={styles.disclaimer}>
-            Will Writer produces a document from the answers you give it. It does not read
+            SortedWill produces a document from the answers you give it. It does not read
             your circumstances and it is not legal advice. If anything on this page describes
             you, the cost of an hour with a solicitor is small next to the cost of getting
             this wrong.

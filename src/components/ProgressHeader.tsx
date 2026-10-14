@@ -61,7 +61,7 @@ export default function ProgressHeader({
                 can be holding several — otherwise every screen looks identical
                 whether you are editing your will or your mother's. */}
             <Text style={styles.appTitle} numberOfLines={1}>
-              {subject || 'Will Writer'}
+              {subject || 'SortedWill'}
             </Text>
             <Text style={styles.stepLabel} numberOfLines={1}>
               {title ? `${title} · step ${current} of ${totalSteps}` : `Step ${current} of ${totalSteps}`}

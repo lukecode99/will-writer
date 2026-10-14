@@ -10,7 +10,7 @@ import * as Sharing from 'expo-sharing';
  * beneficiary", "percentages must add up to 100%" -- would simply never appear
  * and the user would tap Next and see nothing happen.
  */
-export function notify(message: string, title = 'Will Writer'): void {
+export function notify(message: string, title = 'SortedWill'): void {
   if (Platform.OS === 'web') {
     // eslint-disable-next-line no-alert
     window.alert(message);
