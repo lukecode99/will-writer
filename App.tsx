@@ -48,6 +48,7 @@ import ResiduaryEstate from './src/screens/ResiduaryEstate';
 import FuneralWishes from './src/screens/FuneralWishes';
 import Review from './src/screens/Review';
 import Home from './src/screens/Home';
+import Landing from './src/screens/Landing';
 
 /**
  * The wizard's steps, by absolute index.
@@ -296,10 +297,17 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [wills, setWills] = useState<WillSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Which screen stands in for "no will open": the marketing homepage, or the
+  // start / saved-wills screen. A first-time visitor gets the homepage; someone
+  // who already has a draft on the device is a returning user mid-will, so they
+  // skip straight to their wills rather than being re-sold the service.
+  const [view, setView] = useState<'landing' | 'home'>('landing');
 
   useEffect(() => {
     hydrateStorage().then(() => {
-      setWills(listWills());
+      const saved = listWills();
+      setWills(saved);
+      setView(saved.length > 0 ? 'home' : 'landing');
       setReady(true);
     });
   }, []);
@@ -385,6 +393,9 @@ export default function App() {
   function goHome() {
     setActiveId(null);
     setWills(listWills());
+    // Coming out of a will, the start / saved-wills screen is the right place
+    // to land — never back to the marketing homepage.
+    setView('home');
   }
 
   return (
@@ -395,6 +406,8 @@ export default function App() {
           // Keyed by id so that opening a different will remounts the wizard,
           // which is what re-runs the initialisers that read it out of storage.
           <Wizard key={activeId} id={activeId} onHome={goHome} />
+        ) : view === 'landing' ? (
+          <Landing onStart={() => setView('home')} />
         ) : (
           <Home wills={wills} onCreate={create} onOpen={open} onDelete={remove} />
         )
