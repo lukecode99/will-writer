@@ -22,6 +22,9 @@ import {
   createWill,
   deleteWill,
   WillSummary,
+  listPrintedWills,
+  recordPrintedWill,
+  PrintedWill,
 } from './src/storage';
 import { notify, deliverPdf } from './src/platform';
 import { generateWillPdf } from './src/pdfGen';
@@ -296,6 +299,7 @@ function Wizard({ id, onHome }: WizardProps) {
 export default function App() {
   const [ready, setReady] = useState(false);
   const [wills, setWills] = useState<WillSummary[]>([]);
+  const [printed, setPrinted] = useState<PrintedWill[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Which screen stands in for "no will open": the marketing homepage, or the
   // start / saved-wills screen. A first-time visitor gets the homepage; someone
@@ -307,7 +311,11 @@ export default function App() {
     hydrateStorage().then(() => {
       const saved = listWills();
       setWills(saved);
-      setView(saved.length > 0 ? 'home' : 'landing');
+      setPrinted(listPrintedWills());
+      // A visitor with a printed order behind them is a returning user too, not
+      // a first-timer to be re-sold the service — so land them on their wills,
+      // where the printed section lives, rather than the marketing homepage.
+      setView(saved.length > 0 || listPrintedWills().length > 0 ? 'home' : 'landing');
       setReady(true);
     });
   }, []);
@@ -354,12 +362,24 @@ export default function App() {
         const res = await submitPrint({ sessionId, bytes, address: pending.address! });
         // A print purchase also unlocks the download for that will (no double charge).
         await unlockDownload(pending.willId);
+        // A real order joins the printed list on this device, so it shows up
+        // under "Your printed wills" with its date and delivery estimate. A test
+        // order posts nothing, so it is deliberately not recorded.
+        if (!res.testmode) {
+          recordPrintedWill({
+            willId: pending.willId,
+            title: willData.fullName.trim(),
+            letterId: res.letterId,
+            printedAt: Date.now(),
+          });
+          setPrinted(listPrintedWills());
+        }
         clearReturnParam();
         await clearPending();
         notify(
           res.testmode
             ? 'Test order complete — submitted in test mode, so nothing was charged and nothing is posted.'
-            : 'Payment received. Your will is being printed and will be posted first-class. We keep no copy.',
+            : 'Payment received. Your will is being printed and will be posted first-class. We keep no copy of your will.',
           res.testmode ? 'Test order complete' : 'On its way',
         );
       } catch (err) {
@@ -393,6 +413,7 @@ export default function App() {
   function goHome() {
     setActiveId(null);
     setWills(listWills());
+    setPrinted(listPrintedWills());
     // Coming out of a will, the start / saved-wills screen is the right place
     // to land — never back to the marketing homepage.
     setView('home');
@@ -409,7 +430,7 @@ export default function App() {
         ) : view === 'landing' ? (
           <Landing onStart={() => setView('home')} />
         ) : (
-          <Home wills={wills} onCreate={create} onOpen={open} onDelete={remove} />
+          <Home wills={wills} printed={printed} onCreate={create} onOpen={open} onDelete={remove} />
         )
       ) : (
         // Same navy as the splash screen, so the handover is invisible rather

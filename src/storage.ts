@@ -7,6 +7,13 @@ import {
 const DOCS_KEY = 'willWriter.docs.v1';
 const CORRUPT_KEY = 'willWriter.docs.v1.corrupt';
 
+// Printed-and-posted orders live under their own key, not alongside the drafts.
+// They are a different kind of thing — a record that a will left the device to
+// be printed, not an editable document — and keeping them separate means the
+// "we keep no copy of your will" promise is literally true: this record holds a
+// title, a date and the printer's letter id, never any will content.
+const PRINTED_KEY = 'sortedwill.printed.v1';
+
 // The single-will keys this app used before it could hold more than one. Read
 // once, at migration, and then left alone: nothing writes to them again, so a
 // build that has to be rolled back still finds the draft it left behind.
@@ -32,6 +39,21 @@ export interface WillSummary {
 }
 
 /**
+ * A will that was paid for, printed and posted. No will content — only enough
+ * to show the user their order and its delivery estimate. `willId` points at the
+ * draft it was printed from, which may since have been edited or deleted; it is
+ * kept only so a title can fall back to the live draft if the stored one was
+ * blank at print time.
+ */
+export interface PrintedWill {
+  willId: string;
+  title: string;
+  /** Intelliprint's letter id, the one durable reference to the posted job. */
+  letterId: string;
+  printedAt: number;
+}
+
+/**
  * The drafts used to be read straight out of `window.localStorage`. On iOS
  * `window` exists but `window.localStorage` does not, so every read threw, the
  * catch swallowed it, and the app would have opened on a blank will every
@@ -51,6 +73,7 @@ export interface WillSummary {
  * keystroke costs nothing.
  */
 let docs: WillDoc[] = [];
+let printed: PrintedWill[] = [];
 let hydrated = false;
 
 function newId(): string {
@@ -378,11 +401,35 @@ function normalizeDoc(d: any, index: number): WillDoc {
 export async function hydrateStorage(): Promise<void> {
   if (hydrated) return;
   try {
-    const [[, rawDocs], [, legacyWill], [, legacyStep]] = await AsyncStorage.multiGet([
+    const [[, rawDocs], [, legacyWill], [, legacyStep], [, rawPrinted]] = await AsyncStorage.multiGet([
       DOCS_KEY,
       LEGACY_KEY,
       LEGACY_STEP_KEY,
+      PRINTED_KEY,
     ]);
+
+    // The printed-orders list is its own key and its own failure domain: a
+    // corrupt or missing value here must never take the drafts down with it, so
+    // it is read in its own try/catch and simply starts empty if unreadable.
+    printed = [];
+    if (rawPrinted) {
+      try {
+        const parsed = JSON.parse(rawPrinted);
+        if (Array.isArray(parsed)) {
+          printed = parsed
+            .filter(p => p && typeof p === 'object')
+            .map(p => ({
+              willId: str(p.willId),
+              title: str(p.title),
+              letterId: str(p.letterId),
+              printedAt: Number.isFinite(p.printedAt) ? p.printedAt : Date.now(),
+            }))
+            .filter(p => p.letterId);
+        }
+      } catch (err) {
+        console.warn('The printed-orders list could not be read; starting empty', err);
+      }
+    }
 
     if (rawDocs) {
       let parsed: any;
@@ -492,6 +539,30 @@ export function listWills(): WillSummary[] {
       updatedAt: d.updatedAt,
       step: d.step,
     }));
+}
+
+/** Most recently printed first. */
+export function listPrintedWills(): PrintedWill[] {
+  return [...printed].sort((a, b) => b.printedAt - a.printedAt);
+}
+
+/**
+ * Record that a will was printed and posted. Called once, from the print
+ * completion handler, only after the worker confirms a real (non-test) order.
+ *
+ * De-duplicated by letter id: the web flow leaves `?session_id` in the URL so a
+ * reload can safely retry a dropped submit, and the worker is idempotent, so the
+ * same order can legitimately complete twice. Recording it twice would show the
+ * user two identical posted wills, so a letter id already on the list is a
+ * no-op.
+ */
+export function recordPrintedWill(entry: PrintedWill): void {
+  if (!entry.letterId) return;
+  if (printed.some(p => p.letterId === entry.letterId)) return;
+  printed.push(entry);
+  AsyncStorage.setItem(PRINTED_KEY, JSON.stringify(printed)).catch(err =>
+    console.warn('Could not save the printed-order record', err),
+  );
 }
 
 export function createWill(isForSomeoneElse: boolean): string {
