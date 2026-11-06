@@ -13,6 +13,7 @@ interface Props {
   onCreate: (isForSomeoneElse: boolean) => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  onLogoPress: () => void;
 }
 
 function statusOf(id: string): { label: string; done: boolean } {
@@ -68,17 +69,22 @@ function addWorkingDays(ms: number, days: number): number {
   return d.getTime();
 }
 
-export default function Home({ wills, printed, onCreate, onOpen, onDelete }: Props) {
+export default function Home({ wills, printed, onCreate, onOpen, onDelete, onLogoPress }: Props) {
   const insets = useSafeAreaInsets();
   const [showGuide, setShowGuide] = useState(false);
 
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
-        <View style={styles.headerInner}>
+        <TouchableOpacity
+          style={styles.headerInner}
+          onPress={onLogoPress}
+          accessibilityRole="link"
+          accessibilityLabel="SortedWill — go to the home page"
+        >
           <Text style={styles.appTitle}>SortedWill</Text>
           <Text style={styles.appSub}>Wills for England and Wales</Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={[shared.scrollContent, { paddingBottom: insets.bottom + 48 }]}>

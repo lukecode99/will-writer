@@ -309,13 +309,15 @@ export default function App() {
 
   useEffect(() => {
     hydrateStorage().then(() => {
-      const saved = listWills();
-      setWills(saved);
+      setWills(listWills());
       setPrinted(listPrintedWills());
-      // A visitor with a printed order behind them is a returning user too, not
-      // a first-timer to be re-sold the service — so land them on their wills,
-      // where the printed section lives, rather than the marketing homepage.
-      setView(saved.length > 0 || listPrintedWills().length > 0 ? 'home' : 'landing');
+      // The marketing homepage is the front door for everyone — first-time
+      // visitor and returning user alike. A returning user is one tap from their
+      // wills (the primary button, or the logo), and the homepage is the page we
+      // want indexed and shared, so it is what the bare domain serves. The one
+      // exception is a return from Stripe Checkout, handled below, which routes
+      // straight to the wills so a paid order is never stranded behind the pitch.
+      setView('landing');
       setReady(true);
     });
   }, []);
@@ -335,6 +337,10 @@ export default function App() {
         await clearPending();
         return;
       }
+      // A return from Checkout is a paid customer, not a fresh visitor: route
+      // them off the marketing front door and onto their wills, where the print
+      // confirmation and the "Your printed wills" record will land.
+      setView('home');
       try {
         const willData = loadWillData(pending.willId);
         const bytes = await generateWillPdf(willData);
@@ -430,7 +436,14 @@ export default function App() {
         ) : view === 'landing' ? (
           <Landing onStart={() => setView('home')} />
         ) : (
-          <Home wills={wills} printed={printed} onCreate={create} onOpen={open} onDelete={remove} />
+          <Home
+            wills={wills}
+            printed={printed}
+            onCreate={create}
+            onOpen={open}
+            onDelete={remove}
+            onLogoPress={() => setView('landing')}
+          />
         )
       ) : (
         // Same navy as the splash screen, so the handover is invisible rather
