@@ -49,6 +49,18 @@ export default {
       if (url.pathname === '/send' && request.method === 'POST') {
         return withCors(await handleSend(request, env, ctx), cors);
       }
+      if (url.pathname === '/auth/request' && request.method === 'POST') {
+        return withCors(await handleAuthRequest(request, env, ctx), cors);
+      }
+      if (url.pathname === '/auth/verify' && request.method === 'POST') {
+        return withCors(await handleAuthVerify(request, env), cors);
+      }
+      if (url.pathname === '/account/orders' && request.method === 'GET') {
+        return withCors(await handleAccountOrders(request, env), cors);
+      }
+      if (url.pathname === '/auth/logout' && request.method === 'POST') {
+        return withCors(await handleAuthLogout(request, env), cors);
+      }
       if (url.pathname === '/stripe-webhook' && request.method === 'POST') {
         return await handleStripeWebhook(request, env);
       }
@@ -250,6 +262,12 @@ async function handleSend(request, env, ctx) {
           expirationTtl: 60 * 60 * 24 * 30,
         })
       : Promise.resolve(),
+    // Tie the order to the customer's account (keyed by their email) so it
+    // syncs to any device they log in on. Record only id/date/product — never
+    // the will, the name, or the address.
+    email
+      ? recordAccountOrder(env, email, { letterId, printedAt: Date.now(), product: 'print' })
+      : Promise.resolve(),
   ]);
 
   return json({ ok: true, letterId, testmode: isTestMode(env) }, 200);
@@ -329,6 +347,138 @@ async function sendDispatchEmail(env, to) {
     return;
   }
   console.log('dispatch email (no provider configured):', to);
+}
+
+/* -------------------------------------------------------------- accounts */
+
+// Magic-link login. We email a one-time token; clicking the link returns it to
+// the app, which exchanges it for a session. No password is ever stored.
+//
+// The account is keyed only by email, and the ONLY thing it syncs across a
+// user's devices is the record of printed orders (letterId + date + product).
+// Never the will's contents, never a name or a postal address — so the
+// "we keep no copy of your will" promise holds for logged-in users too.
+
+const AUTH_TOKEN_TTL = 60 * 15; // 15 minutes to click the login link
+const SESSION_TTL = 60 * 60 * 24 * 90; // 90-day device session
+const AUTH_RATE_TTL = 60 * 60; // rate-limit window
+const AUTH_RATE_MAX = 5; // login links per email per hour
+
+async function handleAuthRequest(request, env, ctx) {
+  const body = await request.json().catch(() => ({}));
+  const email = str(body.email).toLowerCase();
+  // Answer identically whether or not we sent anything: no account enumeration,
+  // and a malformed address simply never gets an email.
+  const ok = json({ ok: true }, 200);
+  if (!looksLikeEmail(email)) return ok;
+
+  // Abuse guard: cap login-link requests per email per hour.
+  const rlKey = `authrl:${await sha256Hex(email)}`;
+  const sent = parseInt((await env.ORDERS.get(rlKey)) || '0', 10);
+  if (sent >= AUTH_RATE_MAX) return ok;
+
+  const token = randomToken();
+  await env.ORDERS.put(`authtok:${token}`, email, { expirationTtl: AUTH_TOKEN_TTL });
+  await env.ORDERS.put(rlKey, String(sent + 1), { expirationTtl: AUTH_RATE_TTL });
+
+  const link = `${appOrigin(env)}/?login=${token}`;
+  ctxWaitUntil(ctx, [sendLoginEmail(env, email, link)]);
+  return ok;
+}
+
+async function handleAuthVerify(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const token = str(body.token);
+  if (!token) return json({ error: 'invalid' }, 400);
+  const tkey = `authtok:${token}`;
+  const email = await env.ORDERS.get(tkey);
+  if (!email) return json({ error: 'invalid' }, 400);
+  // One-time: burn the login token so the link cannot be replayed.
+  await env.ORDERS.delete(tkey);
+
+  const sessionToken = randomToken();
+  await env.ORDERS.put(`session:${sessionToken}`, email, { expirationTtl: SESSION_TTL });
+  return json({ ok: true, sessionToken, email }, 200);
+}
+
+async function handleAccountOrders(request, env) {
+  const email = await sessionEmail(request, env);
+  if (!email) return json({ error: 'unauthorized' }, 401);
+  const raw = await env.ORDERS.get(`orders:${await sha256Hex(email)}`);
+  const orders = safeParse(raw) || [];
+  return json({ ok: true, email, orders }, 200);
+}
+
+async function handleAuthLogout(request, env) {
+  const token = bearer(request);
+  if (token) await env.ORDERS.delete(`session:${token}`).catch(() => {});
+  return json({ ok: true }, 200);
+}
+
+async function sessionEmail(request, env) {
+  const token = bearer(request);
+  if (!token) return null;
+  return (await env.ORDERS.get(`session:${token}`)) || null;
+}
+
+function bearer(request) {
+  const h = request.headers.get('Authorization') || '';
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].trim() : null;
+}
+
+// Append a printed order to the account record for `email`, keyed by a hash of
+// the address so the raw email is never itself a KV key. Stores only what the
+// "Your printed wills" screen shows — id, timestamp, product — and dedupes on
+// letterId, so a retry or a resync never doubles an entry.
+async function recordAccountOrder(env, email, entry) {
+  if (!email || !looksLikeEmail(email)) return;
+  const key = `orders:${await sha256Hex(email.toLowerCase())}`;
+  const list = safeParse(await env.ORDERS.get(key)) || [];
+  if (list.some(o => o.letterId === entry.letterId)) return;
+  list.push(entry);
+  // No expiry: the printed-order history is the whole point of the account.
+  await env.ORDERS.put(key, JSON.stringify(list));
+}
+
+async function sendLoginEmail(env, to, link) {
+  const from = env.FROM_EMAIL || 'hello@sortedwill.co.uk';
+  const subject = 'Your SortedWill login link';
+  const text =
+    'Tap the link below to sign in to SortedWill. It works once and expires in 15 minutes.\n\n' +
+    link +
+    '\n\nIf you did not ask to sign in, you can ignore this email — nothing will happen.\n\n' +
+    'sortedwill.co.uk';
+  const html =
+    '<p>Tap the button below to sign in to SortedWill. It works once and expires in 15 minutes.</p>' +
+    `<p><a href="${link}" style="display:inline-block;background:#1f4e79;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Sign in to SortedWill</a></p>` +
+    `<p>Or paste this link into your browser:<br><a href="${link}">${link}</a></p>` +
+    '<p style="color:#667">If you did not ask to sign in, you can ignore this email — nothing will happen.</p>';
+
+  if (!env.RESEND_API_KEY) {
+    console.log('login email (no provider configured):', to, link);
+    return;
+  }
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from: `SortedWill <${from}>`, to, subject, text, html }),
+  });
+  if (!res.ok) console.error('resend login failed', res.status, (await res.text()).slice(0, 300));
+}
+
+function randomToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /* ------------------------------------------------------------ Stripe helper */
@@ -433,8 +583,8 @@ function corsHeaders(env, request) {
   const allow = allowed.includes(origin) ? origin : allowed[0];
   return {
     'Access-Control-Allow-Origin': allow,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };

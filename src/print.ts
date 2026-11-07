@@ -117,6 +117,121 @@ export async function submitPrint(args: {
   return data;
 }
 
+/* ---- account (magic-link login) ------------------------------------- */
+
+/**
+ * The account is deliberately thin. It exists to sync ONE thing across a user's
+ * devices: the record of wills they have had printed (an id, a date, a product
+ * — never the will, never a name). Auth is a magic link, so there is no password
+ * to store or lose, and losing the account loses nothing but that order list.
+ */
+const ACCOUNT_KEY = 'sortedwill.account.v1';
+
+export interface Account {
+  email: string;
+  sessionToken: string;
+}
+
+/** A printed-order record as the worker syncs it: no will content, no name. */
+export interface SyncedOrder {
+  letterId: string;
+  printedAt: number;
+  product?: string;
+}
+
+/**
+ * Ask the worker to email a login link. Always resolves the same way: the
+ * worker never reveals whether an address has an account, so there is nothing
+ * to branch on here — the UI just says "check your email" regardless.
+ */
+export async function requestLogin(email: string): Promise<void> {
+  await fetch(`${PRINT_API}/auth/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  }).catch(() => {
+    /* A failed request must still read as "check your email": no enumeration,
+       and a transient network error should not tell the user their address is
+       special. A genuinely undelivered link is recoverable by asking again. */
+  });
+}
+
+/** Exchange a one-time login token (from the emailed link) for a session. */
+export async function verifyLogin(token: string): Promise<Account> {
+  const res = await fetch(`${PRINT_API}/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok || !data.sessionToken || !data.email) {
+    const err = new Error(data.error || `login failed (${res.status})`);
+    (err as any).code = data.error;
+    throw err;
+  }
+  const account: Account = { email: data.email, sessionToken: data.sessionToken };
+  await AsyncStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
+  return account;
+}
+
+/** The signed-in account on this device, or null. */
+export async function loadAccount(): Promise<Account | null> {
+  const raw = await AsyncStorage.getItem(ACCOUNT_KEY);
+  if (!raw) return null;
+  try {
+    const a = JSON.parse(raw);
+    if (a && typeof a.email === 'string' && typeof a.sessionToken === 'string') return a;
+  } catch {
+    /* unreadable — treat as signed out */
+  }
+  return null;
+}
+
+/** Sign out on this device, and best-effort revoke the session server-side. */
+export async function logoutAccount(): Promise<void> {
+  const acct = await loadAccount();
+  await AsyncStorage.removeItem(ACCOUNT_KEY);
+  if (acct) {
+    fetch(`${PRINT_API}/auth/logout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${acct.sessionToken}` },
+    }).catch(() => {});
+  }
+}
+
+/**
+ * Fetch the account's synced printed-order records. Returns null when signed
+ * out or when the session has expired — in the expired case the stale session
+ * is cleared, so the app falls back to signed-out rather than retrying a dead
+ * token on every load.
+ */
+export async function fetchAccountOrders(): Promise<SyncedOrder[] | null> {
+  const acct = await loadAccount();
+  if (!acct) return null;
+  let res: Response;
+  try {
+    res = await fetch(`${PRINT_API}/account/orders`, {
+      headers: { Authorization: `Bearer ${acct.sessionToken}` },
+    });
+  } catch {
+    return null; // offline — keep the session, just no sync this time
+  }
+  if (res.status === 401) {
+    await AsyncStorage.removeItem(ACCOUNT_KEY);
+    return null;
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) return null;
+  return Array.isArray(data.orders) ? data.orders : [];
+}
+
+/** On web, the login token the emailed link lands on (`/?login=...`). */
+export function peekLoginToken(): string | null {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('login');
+}
+
 /* ---- web round-trip survival ---------------------------------------- */
 
 export async function stashPending(p: PendingPrint): Promise<void> {

@@ -74,6 +74,11 @@ export interface PrintedWill {
  */
 let docs: WillDoc[] = [];
 let printed: PrintedWill[] = [];
+// Printed-order records pulled from the signed-in account. Kept in memory only,
+// never written to disk and cleared on sign-out, so a shared device never
+// leaves one person's order list visible to the next. They carry no title (the
+// account stores none), so they display under the generic "Your will".
+let syncedPrinted: PrintedWill[] = [];
 let hydrated = false;
 
 function newId(): string {
@@ -541,9 +546,34 @@ export function listWills(): WillSummary[] {
     }));
 }
 
-/** Most recently printed first. */
+/**
+ * Most recently printed first, merging this device's own printed orders with
+ * any synced from the signed-in account. Deduped by letter id, with the local
+ * record winning — it is the one that carries the will's title.
+ */
 export function listPrintedWills(): PrintedWill[] {
-  return [...printed].sort((a, b) => b.printedAt - a.printedAt);
+  const byId = new Map<string, PrintedWill>();
+  for (const p of syncedPrinted) byId.set(p.letterId, p);
+  for (const p of printed) byId.set(p.letterId, p);
+  return [...byId.values()].sort((a, b) => b.printedAt - a.printedAt);
+}
+
+/**
+ * Replace the account-synced printed orders held in memory. Called after a
+ * sync pulls the account's order list; pass an empty array on sign-out to drop
+ * them. Stores only id/date/product — the account keeps nothing else.
+ */
+export function setSyncedPrintedWills(
+  synced: { letterId: string; printedAt: number }[],
+): void {
+  syncedPrinted = (synced || [])
+    .filter(s => s && typeof s.letterId === 'string' && s.letterId)
+    .map(s => ({
+      willId: '',
+      title: '',
+      letterId: s.letterId,
+      printedAt: Number.isFinite(s.printedAt) ? s.printedAt : Date.now(),
+    }));
 }
 
 /**

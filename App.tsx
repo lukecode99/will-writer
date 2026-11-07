@@ -24,6 +24,7 @@ import {
   WillSummary,
   listPrintedWills,
   recordPrintedWill,
+  setSyncedPrintedWills,
   PrintedWill,
 } from './src/storage';
 import { notify, deliverPdf } from './src/platform';
@@ -36,6 +37,12 @@ import {
   submitPrint,
   verifyDownload,
   unlockDownload,
+  loadAccount,
+  verifyLogin,
+  logoutAccount,
+  fetchAccountOrders,
+  peekLoginToken,
+  Account as AccountModel,
 } from './src/print';
 import { hasMinorChildren } from './src/family';
 import { syncLinkedBeneficiaries } from './src/people';
@@ -52,6 +59,7 @@ import FuneralWishes from './src/screens/FuneralWishes';
 import Review from './src/screens/Review';
 import Home from './src/screens/Home';
 import Landing from './src/screens/Landing';
+import Account from './src/screens/Account';
 
 /**
  * The wizard's steps, by absolute index.
@@ -301,16 +309,38 @@ export default function App() {
   const [wills, setWills] = useState<WillSummary[]>([]);
   const [printed, setPrinted] = useState<PrintedWill[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Which screen stands in for "no will open": the marketing homepage, or the
-  // start / saved-wills screen. A first-time visitor gets the homepage; someone
-  // who already has a draft on the device is a returning user mid-will, so they
-  // skip straight to their wills rather than being re-sold the service.
-  const [view, setView] = useState<'landing' | 'home'>('landing');
+  // Which screen stands in for "no will open": the marketing homepage, the
+  // start / saved-wills screen, or the account screen. A first-time visitor gets
+  // the homepage; someone who already has a draft on the device is a returning
+  // user mid-will, so they skip straight to their wills rather than being
+  // re-sold the service.
+  const [view, setView] = useState<'landing' | 'home' | 'account'>('landing');
+  // The signed-in account, if any. An account syncs only the record of printed
+  // orders across devices — never a will. Held here so the Account screen and
+  // the printed-wills list stay in step.
+  const [account, setAccount] = useState<AccountModel | null>(null);
+
+  // Pull the account's synced printed-order records into the printed list.
+  // Called after sign-in and on launch while signed in; failures (offline, or an
+  // expired session already cleared by fetchAccountOrders) simply leave the
+  // local list as it is.
+  const syncAccountOrders = useCallback(async () => {
+    const orders = await fetchAccountOrders();
+    if (orders) {
+      setSyncedPrintedWills(orders);
+      setPrinted(listPrintedWills());
+    }
+  }, []);
 
   useEffect(() => {
-    hydrateStorage().then(() => {
+    hydrateStorage().then(async () => {
       setWills(listWills());
       setPrinted(listPrintedWills());
+      const acct = await loadAccount();
+      if (acct) {
+        setAccount(acct);
+        syncAccountOrders();
+      }
       // The marketing homepage is the front door for everyone — first-time
       // visitor and returning user alike. A returning user is one tap from their
       // wills (the primary button, or the logo), and the homepage is the page we
@@ -400,6 +430,36 @@ export default function App() {
     })();
   }, [ready]);
 
+  // Arriving on an emailed sign-in link (`/?login=<token>`, web). Exchange the
+  // one-time token for a session, pull the account's synced orders, and land on
+  // the account screen so the sign-in reads as having worked. The token is
+  // stripped from the URL either way, so a refresh cannot replay a spent link.
+  useEffect(() => {
+    if (!ready) return;
+    const token = peekLoginToken();
+    if (!token) return;
+    (async () => {
+      try {
+        const acct = await verifyLogin(token);
+        setAccount(acct);
+        await syncAccountOrders();
+        setView('account');
+      } catch (err) {
+        console.warn('sign-in link failed', err);
+        // A spent or expired link is the common case, not an error worth a
+        // modal: drop them on the account screen signed-out, where they can ask
+        // for a fresh link.
+        setView('account');
+        notify(
+          'That sign-in link has expired or already been used. Enter your email to get a new one.',
+          'Link expired',
+        );
+      } finally {
+        clearReturnParam();
+      }
+    })();
+  }, [ready]);
+
   function open(id: string) {
     setActiveId(id);
   }
@@ -425,6 +485,17 @@ export default function App() {
     setView('home');
   }
 
+  // Sign out: drop the local session, clear the synced orders from memory (so a
+  // shared device never leaves one person's order list for the next), rebuild
+  // the printed list from this device's own records, and return to the wills.
+  async function logout() {
+    await logoutAccount();
+    setAccount(null);
+    setSyncedPrintedWills([]);
+    setPrinted(listPrintedWills());
+    setView('home');
+  }
+
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="light-content" backgroundColor={C.primary} />
@@ -435,6 +506,12 @@ export default function App() {
           <Wizard key={activeId} id={activeId} onHome={goHome} />
         ) : view === 'landing' ? (
           <Landing onStart={() => setView('home')} />
+        ) : view === 'account' ? (
+          <Account
+            account={account}
+            onLogoPress={() => setView('landing')}
+            onLogout={logout}
+          />
         ) : (
           <Home
             wills={wills}
@@ -443,6 +520,7 @@ export default function App() {
             onOpen={open}
             onDelete={remove}
             onLogoPress={() => setView('landing')}
+            onAccount={() => setView('account')}
           />
         )
       ) : (
