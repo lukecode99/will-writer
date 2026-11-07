@@ -511,6 +511,13 @@ export default function App() {
             account={account}
             onLogoPress={() => setView('landing')}
             onLogout={logout}
+            onSignedIn={async (acct) => {
+              // iOS code sign-in completes inside the Account screen; adopt the
+              // fresh session here and pull the account's synced printed orders,
+              // mirroring what the web magic-link effect does on verifyLogin.
+              setAccount(acct);
+              await syncAccountOrders();
+            }}
           />
         ) : (
           <Home
@@ -521,6 +528,7 @@ export default function App() {
             onDelete={remove}
             onLogoPress={() => setView('landing')}
             onAccount={() => setView('account')}
+            accountInitial={account?.email}
           />
         )
       ) : (

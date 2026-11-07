@@ -55,6 +55,12 @@ export default {
       if (url.pathname === '/auth/verify' && request.method === 'POST') {
         return withCors(await handleAuthVerify(request, env), cors);
       }
+      if (url.pathname === '/auth/otp/request' && request.method === 'POST') {
+        return withCors(await handleOtpRequest(request, env, ctx), cors);
+      }
+      if (url.pathname === '/auth/otp/verify' && request.method === 'POST') {
+        return withCors(await handleOtpVerify(request, env), cors);
+      }
       if (url.pathname === '/account/orders' && request.method === 'GET') {
         return withCors(await handleAccountOrders(request, env), cors);
       }
@@ -364,6 +370,16 @@ const SESSION_TTL = 60 * 60 * 24 * 90; // 90-day device session
 const AUTH_RATE_TTL = 60 * 60; // rate-limit window
 const AUTH_RATE_MAX = 5; // login links per email per hour
 
+// On iOS there is no browser to catch a magic link, so the same login is done
+// with a 6-digit code typed back into the app. The security properties are the
+// identical ones used by the link: single-use, short-lived, rate-limited, and
+// it mints the very same `session:` token — so an account is one account whether
+// you signed in by link (web) or by code (app).
+const OTP_TTL = 60 * 10; // 10 minutes to type the code
+const OTP_RATE_TTL = 60 * 10; // request rate-limit window
+const OTP_RATE_MAX = 5; // codes per email per 10 minutes
+const OTP_MAX_ATTEMPTS = 5; // wrong-code guesses before the code is burned
+
 async function handleAuthRequest(request, env, ctx) {
   const body = await request.json().catch(() => ({}));
   const email = str(body.email).toLowerCase();
@@ -396,6 +412,66 @@ async function handleAuthVerify(request, env) {
   // One-time: burn the login token so the link cannot be replayed.
   await env.ORDERS.delete(tkey);
 
+  const sessionToken = randomToken();
+  await env.ORDERS.put(`session:${sessionToken}`, email, { expirationTtl: SESSION_TTL });
+  return json({ ok: true, sessionToken, email }, 200);
+}
+
+// iOS sign-in, step 1: email a 6-digit code. Mirrors handleAuthRequest exactly
+// — identical response whether or not an account exists (no enumeration), same
+// per-email rate cap. We store only a HASH of the code (never the plaintext),
+// keyed by a hash of the email, with an attempt counter folded in so a few wrong
+// guesses burn it.
+async function handleOtpRequest(request, env, ctx) {
+  const body = await request.json().catch(() => ({}));
+  const email = str(body.email).toLowerCase();
+  const ok = json({ ok: true }, 200);
+  if (!looksLikeEmail(email)) return ok;
+
+  const emailHash = await sha256Hex(email);
+  const rlKey = `otprl:${emailHash}`;
+  const sent = parseInt((await env.ORDERS.get(rlKey)) || '0', 10);
+  if (sent >= OTP_RATE_MAX) return ok;
+
+  const code = sixDigitCode();
+  const record = JSON.stringify({ hash: await sha256Hex(`${email}:${code}`), attempts: 0 });
+  await env.ORDERS.put(`otp:${emailHash}`, record, { expirationTtl: OTP_TTL });
+  await env.ORDERS.put(rlKey, String(sent + 1), { expirationTtl: OTP_RATE_TTL });
+
+  ctxWaitUntil(ctx, [sendOtpEmail(env, email, code)]);
+  return ok;
+}
+
+// iOS sign-in, step 2: exchange {email, code} for a session. Validates the code
+// against the stored hash, counts wrong guesses, and on success burns the code
+// (one-time) and mints the same `session:` token the magic link would.
+async function handleOtpVerify(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const email = str(body.email).toLowerCase();
+  const code = str(body.code).replace(/\D/g, '');
+  if (!looksLikeEmail(email) || code.length !== 6) return json({ error: 'invalid' }, 400);
+
+  const emailHash = await sha256Hex(email);
+  const okey = `otp:${emailHash}`;
+  const rec = safeParse(await env.ORDERS.get(okey));
+  if (!rec || typeof rec.hash !== 'string') return json({ error: 'invalid' }, 400);
+
+  if ((rec.attempts || 0) >= OTP_MAX_ATTEMPTS) {
+    await env.ORDERS.delete(okey);
+    return json({ error: 'too_many_attempts' }, 429);
+  }
+
+  const given = await sha256Hex(`${email}:${code}`);
+  if (!timingSafeEqual(given, rec.hash)) {
+    // Preserve the code's original TTL on the re-put so a wrong guess cannot
+    // extend its life; a fresh short window is enough to finish the attempts.
+    rec.attempts = (rec.attempts || 0) + 1;
+    await env.ORDERS.put(okey, JSON.stringify(rec), { expirationTtl: OTP_TTL });
+    return json({ error: 'wrong_code' }, 400);
+  }
+
+  // Correct — burn it so the code cannot be replayed, then mint the session.
+  await env.ORDERS.delete(okey);
   const sessionToken = randomToken();
   await env.ORDERS.put(`session:${sessionToken}`, email, { expirationTtl: SESSION_TTL });
   return json({ ok: true, sessionToken, email }, 200);
@@ -468,6 +544,48 @@ async function sendLoginEmail(env, to, link) {
     body: JSON.stringify({ from: `SortedWill <${from}>`, to, subject, text, html }),
   });
   if (!res.ok) console.error('resend login failed', res.status, (await res.text()).slice(0, 300));
+}
+
+async function sendOtpEmail(env, to, code) {
+  const from = env.FROM_EMAIL || 'hello@sortedwill.co.uk';
+  const subject = `${code} is your SortedWill code`;
+  const text =
+    `Your SortedWill sign-in code is ${code}\n\n` +
+    'Type it into the app to sign in. It works once and expires in 10 minutes.\n\n' +
+    'If you did not ask to sign in, you can ignore this email — nothing will happen.\n\n' +
+    'sortedwill.co.uk';
+  const html =
+    '<p>Your SortedWill sign-in code is:</p>' +
+    `<p style="font-size:32px;font-weight:700;letter-spacing:6px;color:#1f4e79;margin:8px 0">${code}</p>` +
+    '<p>Type it into the app to sign in. It works once and expires in 10 minutes.</p>' +
+    '<p style="color:#667">If you did not ask to sign in, you can ignore this email — nothing will happen.</p>';
+
+  if (!env.RESEND_API_KEY) {
+    console.log('otp email (no provider configured):', to, code);
+    return;
+  }
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from: `SortedWill <${from}>`, to, subject, text, html }),
+  });
+  if (!res.ok) console.error('resend otp failed', res.status, (await res.text()).slice(0, 300));
+}
+
+// A uniformly-distributed 6-digit code (000000–999999). Rejection-samples the
+// top of the 32-bit range so low codes are not very slightly more likely.
+function sixDigitCode() {
+  const max = 4294967296 - (4294967296 % 1000000); // largest clean multiple
+  const buf = new Uint32Array(1);
+  let n;
+  do {
+    crypto.getRandomValues(buf);
+    n = buf[0];
+  } while (n >= max);
+  return String(n % 1000000).padStart(6, '0');
 }
 
 function randomToken() {

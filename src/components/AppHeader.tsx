@@ -11,6 +11,10 @@ interface Props {
   /** When the account screen is itself on view, the control reads as the current
    *  page rather than a link away from it. */
   accountActive?: boolean;
+  /** When signed in, the first letter of the account email — shown as a small
+   *  circle on the Account control so the signed-in state is visible at a glance
+   *  from any page, not only on the account screen itself. */
+  accountInitial?: string;
 }
 
 /**
@@ -20,8 +24,9 @@ interface Props {
  * to be hunted for. Kept out of the wizard header deliberately: mid-will is a
  * focused flow, and its header is a progress bar, not navigation.
  */
-export default function AppHeader({ onLogoPress, onAccount, accountActive }: Props) {
+export default function AppHeader({ onLogoPress, onAccount, accountActive, accountInitial }: Props) {
   const insets = useSafeAreaInsets();
+  const initial = accountInitial ? accountInitial.trim().charAt(0).toUpperCase() : '';
   return (
     <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
       <View style={styles.inner}>
@@ -38,9 +43,20 @@ export default function AppHeader({ onLogoPress, onAccount, accountActive }: Pro
           style={[styles.accountBtn, accountActive ? styles.accountBtnActive : null]}
           onPress={onAccount}
           accessibilityRole="button"
-          accessibilityLabel="Your account"
+          accessibilityLabel={initial ? 'Your account, signed in' : 'Your account'}
           accessibilityState={{ selected: !!accountActive }}
         >
+          {initial ? (
+            <View
+              style={[styles.initialDot, accountActive ? styles.initialDotActive : null]}
+            >
+              <Text
+                style={[styles.initialText, accountActive ? styles.initialTextActive : null]}
+              >
+                {initial}
+              </Text>
+            </View>
+          ) : null}
           <Text style={[styles.accountBtnText, accountActive ? styles.accountBtnTextActive : null]}>
             Account
           </Text>
@@ -78,16 +94,38 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   accountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1.5,
     borderColor: '#4A6894',
     borderRadius: 8,
-    paddingVertical: 7,
+    paddingVertical: 11,
     paddingHorizontal: 14,
     marginLeft: 12,
   },
   accountBtnActive: {
     backgroundColor: '#FFFFFF',
     borderColor: '#FFFFFF',
+  },
+  initialDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 7,
+  },
+  initialDotActive: {
+    backgroundColor: C.primary,
+  },
+  initialText: {
+    color: C.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  initialTextActive: {
+    color: '#FFFFFF',
   },
   accountBtnText: {
     color: '#FFFFFF',

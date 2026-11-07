@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Account as AccountType, requestLogin } from '../print';
+import { Account as AccountType, requestLogin, requestOtp, verifyOtp } from '../print';
 import { C, shared, CONTENT_MAX_WIDTH } from './shared';
 import AppHeader from '../components/AppHeader';
 
@@ -9,7 +9,16 @@ interface Props {
   account: AccountType | null;
   onLogoPress: () => void;
   onLogout: () => void;
+  /** iOS completes sign-in in-app (code entry), so the screen hands the fresh
+   *  account back up to App to store in state and sync orders. Unused on web,
+   *  where the emailed link drives sign-in from App itself. */
+  onSignedIn?: (account: AccountType) => void;
 }
+
+/** iOS signs in with a 6-digit code typed back into the app; web uses an emailed
+ *  magic link. The only reason to branch is that iOS has no browser to catch the
+ *  link, so the two platforms genuinely differ here. */
+const USE_OTP = Platform.OS !== 'web';
 
 /** A light client-side check so an obvious typo gets caught before a round-trip.
  *  The worker is the real gate; this only stops "no @" reaching it. */
@@ -17,12 +26,16 @@ function looksLikeEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 }
 
-export default function Account({ account, onLogoPress, onLogout }: Props) {
+export default function Account({ account, onLogoPress, onLogout, onSignedIn }: Props) {
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [touched, setTouched] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  // iOS code-entry state (unused on web).
+  const [code, setCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
 
   const invalid = touched && !looksLikeEmail(email);
 
@@ -33,21 +46,62 @@ export default function Account({ account, onLogoPress, onLogout }: Props) {
     }
     setSending(true);
     try {
-      await requestLogin(email.trim());
+      if (USE_OTP) {
+        await requestOtp(email.trim());
+      } else {
+        await requestLogin(email.trim());
+      }
     } finally {
-      // requestLogin never rejects — it deliberately reads the same whether or
-      // not the address has an account, so there is nothing to branch on. Either
-      // way the next screen is "check your email".
+      // Neither request rejects — both deliberately read the same whether or not
+      // the address has an account, so there is nothing to branch on. Either way
+      // the next screen is "check your email" (web) / "enter your code" (iOS).
       setSending(false);
+      setCode('');
+      setCodeError(null);
       setSent(true);
     }
+  }
+
+  async function verify() {
+    const c = code.replace(/\D/g, '');
+    if (c.length !== 6) {
+      setCodeError('Enter the 6-digit code from your email.');
+      return;
+    }
+    setVerifying(true);
+    setCodeError(null);
+    try {
+      const acct = await verifyOtp(email.trim(), c);
+      onSignedIn?.(acct);
+    } catch (err: any) {
+      if (err?.code === 'too_many_attempts') {
+        setCodeError('Too many tries. Ask for a new code.');
+      } else {
+        setCodeError('That code was wrong or has expired. Check it and try again.');
+      }
+      setCode('');
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  function startOver() {
+    setSent(false);
+    setTouched(false);
+    setCode('');
+    setCodeError(null);
   }
 
   return (
     <View style={styles.root}>
       {/* Already on the account page, so the Account control is the current
           page, not a link — it reads as active and does nothing when tapped. */}
-      <AppHeader onLogoPress={onLogoPress} onAccount={() => {}} accountActive />
+      <AppHeader
+        onLogoPress={onLogoPress}
+        onAccount={() => {}}
+        accountActive
+        accountInitial={account?.email}
+      />
 
       <ScrollView contentContainerStyle={[shared.scrollContent, { paddingBottom: insets.bottom + 48 }]}>
         <View style={styles.column}>
@@ -77,6 +131,50 @@ export default function Account({ account, onLogoPress, onLogout }: Props) {
                 <Text style={shared.secondaryBtnText}>Sign out</Text>
               </TouchableOpacity>
             </>
+          ) : sent && USE_OTP ? (
+            <>
+              <Text style={shared.heading}>Enter your code</Text>
+              <Text style={shared.sub}>
+                If {email.trim()} is a SortedWill account, a 6-digit code is on its way. Type it in
+                below to sign in. The code works once and lasts 10 minutes.
+              </Text>
+
+              <Text style={shared.label}>6-digit code</Text>
+              <TextInput
+                style={[shared.input, styles.codeInput, codeError ? shared.inputError : null]}
+                value={code}
+                onChangeText={(t) => {
+                  setCode(t.replace(/\D/g, '').slice(0, 6));
+                  if (codeError) setCodeError(null);
+                }}
+                placeholder="123456"
+                placeholderTextColor={C.textLight}
+                keyboardType="number-pad"
+                textContentType="oneTimeCode"
+                autoComplete="sms-otp"
+                maxLength={6}
+                editable={!verifying}
+                accessibilityLabel="6-digit sign-in code"
+              />
+              {codeError ? <Text style={shared.error}>{codeError}</Text> : null}
+
+              <TouchableOpacity
+                style={[shared.primaryBtn, verifying ? shared.btnDisabled : null]}
+                onPress={verify}
+                disabled={verifying}
+                accessibilityRole="button"
+              >
+                <Text style={shared.primaryBtnText}>{verifying ? 'Checking…' : 'Sign in'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={shared.secondaryBtn}
+                onPress={startOver}
+                accessibilityRole="button"
+              >
+                <Text style={shared.secondaryBtnText}>Use a different email</Text>
+              </TouchableOpacity>
+            </>
           ) : sent ? (
             <>
               <Text style={shared.heading}>Check your email</Text>
@@ -86,10 +184,7 @@ export default function Account({ account, onLogoPress, onLogout }: Props) {
               </Text>
               <TouchableOpacity
                 style={shared.secondaryBtn}
-                onPress={() => {
-                  setSent(false);
-                  setTouched(false);
-                }}
+                onPress={startOver}
                 accessibilityRole="button"
               >
                 <Text style={shared.secondaryBtnText}>Use a different email</Text>
@@ -100,7 +195,7 @@ export default function Account({ account, onLogoPress, onLogout }: Props) {
               <Text style={shared.heading}>Sign in</Text>
               <Text style={shared.sub}>
                 An account syncs the record of your printed wills across your devices — nothing
-                else. There's no password: we email you a link to sign in.
+                else. There's no password: {USE_OTP ? 'we email you a 6-digit code to sign in' : 'we email you a link to sign in'}.
               </Text>
 
               <Text style={shared.label}>Your email</Text>
@@ -127,7 +222,7 @@ export default function Account({ account, onLogoPress, onLogout }: Props) {
                 accessibilityRole="button"
               >
                 <Text style={shared.primaryBtnText}>
-                  {sending ? 'Sending…' : 'Email me a sign-in link'}
+                  {sending ? 'Sending…' : USE_OTP ? 'Email me a code' : 'Email me a sign-in link'}
                 </Text>
               </TouchableOpacity>
 
@@ -169,5 +264,11 @@ const styles = StyleSheet.create({
     color: C.textLight,
     lineHeight: 18,
     marginTop: 20,
+  },
+  codeInput: {
+    fontSize: 24,
+    letterSpacing: 8,
+    textAlign: 'center',
+    fontWeight: '700',
   },
 });

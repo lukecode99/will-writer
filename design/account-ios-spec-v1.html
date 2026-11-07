@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WILL-ACCOUNT-IOS — SortedWill iOS Account Screen</title>
+  <style>
+    /* ---- TOKENS (from src/screens/shared.ts) ---- */
+    :root {
+      --primary: #1B3A6B;
+      --bg: #F7F9FC;
+      --surface: #FFFFFF;
+      --text: #1A1A2E;
+      --text-light: #6B7280;
+      --border: #D1DCE8;
+      --danger: #DC2626;
+      --success: #059669;
+      --header-sub: #C7D6EA;
+      --acct-btn-border: #4A6894;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #C8D3E2;
+      color: var(--text);
+    }
+
+    /* ---- PAGE HEADER ---- */
+    .page-top {
+      background: var(--primary);
+      padding: 20px 32px 18px;
+    }
+    .page-top h1 {
+      font-size: 18px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.01em;
+    }
+    .page-top p {
+      font-size: 12px;
+      color: var(--header-sub);
+      margin-top: 3px;
+    }
+
+    /* ---- SECTION LABEL ---- */
+    .section-label {
+      max-width: 1600px;
+      margin: 28px auto 14px;
+      padding: 0 24px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #546078;
+    }
+
+    /* ---- SCREENS ROW ---- */
+    .screens-row {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 0 24px 48px;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    .screen-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .state-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #465569;
+    }
+
+    /* ---- PHONE FRAME ---- */
+    .phone {
+      width: 375px;
+      background: var(--bg);
+      border-radius: 44px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* iOS status bar */
+    .status-bar {
+      background: var(--primary);
+      height: 44px;
+      padding: 10px 20px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sb-time {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .sb-icons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* AppHeader — matches AppHeader.tsx exactly */
+    .app-header {
+      background: var(--primary);
+      padding: 10px 20px 16px;
+    }
+    .ahi {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .ahi-wordmark {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      display: block;
+      line-height: 1.2;
+    }
+    .ahi-tagline {
+      font-size: 13px;
+      color: var(--header-sub);
+      margin-top: 2px;
+      display: block;
+    }
+    .acct-btn {
+      border: 1.5px solid var(--acct-btn-border);
+      border-radius: 8px;
+      /* paddingVertical bumped 7→11 for ≥44px tap target — see Decision 5 */
+      padding: 11px 14px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      margin-left: 12px;
+    }
+    .acct-btn.active {
+      background: #fff;
+      border-color: #fff;
+      color: var(--primary);
+    }
+    /* Email initial — shown in signed-in state per self-review item 3 */
+    .acct-initial {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* Screen scroll content */
+    .screen-body {
+      padding: 20px;
+      flex: 1;
+    }
+
+    /* ---- SHARED COMPONENT STYLES (from shared.ts) ---- */
+    .s-heading {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+      margin-top: 4px;
+    }
+    .s-sub {
+      font-size: 14px;
+      color: var(--text-light);
+      margin-bottom: 20px;
+      line-height: 20px;
+    }
+    .s-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+      margin-top: 14px;
+      display: block;
+    }
+    .s-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 15px;
+      color: var(--text);
+      font-family: inherit;
+    }
+    .s-input::placeholder { color: var(--text-light); }
+    .s-btn-primary {
+      width: 100%;
+      background: var(--primary);
+      border: none;
+      border-radius: 12px;
+      padding: 15px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 24px;
+      font-family: inherit;
+      cursor: pointer;
+      text-align: center;
+      display: block;
+    }
+    .s-btn-secondary {
+      width: 100%;
+      background: transparent;
+      border: 1.5px solid var(--primary);
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--primary);
+      margin-top: 8px;
+      font-family: inherit;
+      cursor: pointer;
+      text-align: center;
+      display: block;
+    }
+    .s-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 14px;
+      margin-top: 10px;
+      border: 1px solid var(--border);
+    }
+    .s-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .s-card-body {
+      font-size: 13px;
+      color: var(--text-light);
+      line-height: 19px;
+    }
+
+    /* ---- OTP INPUT ROW (new for iOS) ---- */
+    .otp-row {
+      display: flex;
+      gap: 7px;
+      margin-top: 16px;
+      margin-bottom: 4px;
+    }
+    .otp-box {
+      flex: 1;
+      height: 56px;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .otp-box.filled { border-color: var(--primary); }
+    .otp-box.cursor {
+      border: 2px solid var(--primary);
+      position: relative;
+    }
+    .otp-box.cursor::after {
+      content: '';
+      display: block;
+      width: 1.5px;
+      height: 26px;
+      background: var(--primary);
+      animation: blink 1s step-end infinite;
+    }
+    .otp-box.error { border-color: var(--danger); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* OTP secondary actions */
+    .otp-actions {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .link-btn {
+      font-size: 14px;
+      color: var(--primary);
+      font-weight: 600;
+      padding: 10px 0;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      text-decoration: underline;
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-family: inherit;
+    }
+    .link-btn.dimmed {
+      color: var(--text-light);
+      text-decoration: none;
+    }
+    .link-btn.secondary {
+      color: var(--text-light);
+      font-weight: 400;
+    }
+
+    /* Error message inline */
+    .s-error {
+      font-size: 12px;
+      color: var(--danger);
+      margin-top: 6px;
+      line-height: 16px;
+    }
+
+    /* Privacy note */
+    .privacy-note {
+      font-size: 12px;
+      color: var(--text-light);
+      line-height: 18px;
+      margin-top: 20px;
+    }
+
+    /* ---- SPEC SECTION ---- */
+    .spec-section {
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      padding: 44px 24px 64px;
+    }
+    .spec-inner {
+      max-width: 820px;
+      margin: 0 auto;
+    }
+    .spec-inner > h2 {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--primary);
+      margin-bottom: 24px;
+    }
+    .decision-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin-bottom: 20px;
+    }
+    .decision-block h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+    .badge {
+      display: inline-block;
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      margin-right: 4px;
+    }
+    .badge-ship {
+      background: #ECFDF5;
+      border: 1px solid #A7F3D0;
+      color: #065F46;
+    }
+    .badge-hold {
+      background: #FFF7ED;
+      border: 1px solid #FED7AA;
+      color: #9A3412;
+    }
+    .badge-note {
+      background: #EFF6FF;
+      border: 1px solid #BFDBFE;
+      color: #1D4ED8;
+    }
+
+    /* Comparison table */
+    .cmp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 14px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .cmp-table th {
+      background: #F1F5F9;
+      text-align: left;
+      padding: 9px 12px;
+      font-weight: 700;
+      font-size: 12px;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+    }
+    .cmp-table th.rec { background: #ECFDF5; }
+    .cmp-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #EEF2F7;
+      vertical-align: top;
+      color: var(--text-light);
+      line-height: 18px;
+      font-size: 13px;
+    }
+    .cmp-table tr:last-child td { border-bottom: none; }
+    .cmp-table td.row-label {
+      font-weight: 600;
+      color: var(--text);
+      font-size: 12px;
+      white-space: nowrap;
+      width: 110px;
+    }
+    .cmp-table td.otp-col { background: #F7FFF9; }
+
+    /* Implementation note block */
+    .impl {
+      background: #F5F8FF;
+      border-left: 3px solid var(--primary);
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #374151;
+      line-height: 19px;
+      border-radius: 0 8px 8px 0;
+      margin-top: 12px;
+    }
+    .impl ul { margin: 8px 0 0 18px; }
+    .impl li { margin-bottom: 5px; }
+    .impl code {
+      background: #E2E8F0;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      color: #1B3A6B;
+    }
+    .body-text {
+      font-size: 14px;
+      color: var(--text-light);
+      line-height: 20px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Page header -->
+<div class="page-top">
+  <h1>WILL-ACCOUNT-IOS — iOS Account Screen</h1>
+  <p>SortedWill · Design spec v1.0 · 7 Nov 2026 · Designer → Nano</p>
+</div>
+
+<!-- ---- SCREENS ---- -->
+<div class="section-label">Screen states</div>
+
+<div class="screens-row">
+
+  <!-- STATE A: Request code -->
+  <div class="screen-col">
+    <div class="state-label">A — Request code (signed out)</div>
+    <div class="phone">
+      <div class="status-bar">
+        <span class="sb-time">9:41</span>
+        <div class="sb-icons">
+          <!-- Signal -->
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="white" aria-hidden="true">
+            <rect x="0" y="8" width="3" height="4" rx="0.5"/>
+            <rect x="4.5" y="5" width="3" height="7" rx="0.5"/>
+            <rect x="9" y="2" width="3" height="10" rx="0.5"/>
+            <rect x="13.5" y="0" width="3" height="12" rx="0.5" opacity="0.35"/>
+          </svg>
+          <!-- WiFi -->
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="white" aria-hidden="true">
+            <path d="M8 9.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/>
+            <path d="M3.3 6.3a6.6 6.6 0 0 1 9.4 0l1.1-1.1a8.2 8.2 0 0 0-11.6 0l1.1 1.1z" opacity="0.9"/>
+            <path d="M5.5 8.5a3.5 3.5 0 0 1 5 0l1.1-1.1a5.1 5.1 0 0 0-7.2 0l1.1 1.1z" opacity="0.95"/>
+          </svg>
+          <!-- Battery -->
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="white" stroke-opacity="0.5"/>
+            <rect x="1.5" y="1.5" width="17" height="9" rx="1.5" fill="white"/>
+            <path d="M23 4v4a2 2 0 0 0 0-4z" fill="white" opacity="0.4"/>
+          </svg>
+        </div>
+      </div>
+      <div class="app-header">
+        <div class="ahi">
+          <div>
+            <span class="ahi-wordmark">SortedWill</span>
+            <span class="ahi-tagline">Wills for England and Wales</span>
+          </div>
+          <div class="acct-btn active">Account</div>
+        </div>
+      </div>
+      <div class="screen-body">
+        <h2 class="s-heading">Sign in</h2>
+        <p class="s-sub">An account syncs the record of your printed wills across your devices — nothing else. Enter your email and we'll send you a 6-digit code.</p>
+
+        <span class="s-label">Your email</span>
+        <input class="s-input" type="email" placeholder="you@example.com" readonly />
+
+        <button class="s-btn-primary">Send code</button>
+
+        <p class="privacy-note">Use the same email you gave when you ordered a printed will. That's how your orders find their way back to you. We keep no copy of your will.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE B: Enter OTP (3 filled, cursor on 4th) -->
+  <div class="screen-col">
+    <div class="state-label">B — Enter code</div>
+    <div class="phone">
+      <div class="status-bar">
+        <span class="sb-time">9:41</span>
+        <div class="sb-icons">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="white" aria-hidden="true">
+            <rect x="0" y="8" width="3" height="4" rx="0.5"/>
+            <rect x="4.5" y="5" width="3" height="7" rx="0.5"/>
+            <rect x="9" y="2" width="3" height="10" rx="0.5"/>
+            <rect x="13.5" y="0" width="3" height="12" rx="0.5" opacity="0.35"/>
+          </svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="white" aria-hidden="true">
+            <path d="M8 9.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/>
+            <path d="M3.3 6.3a6.6 6.6 0 0 1 9.4 0l1.1-1.1a8.2 8.2 0 0 0-11.6 0l1.1 1.1z" opacity="0.9"/>
+            <path d="M5.5 8.5a3.5 3.5 0 0 1 5 0l1.1-1.1a5.1 5.1 0 0 0-7.2 0l1.1 1.1z" opacity="0.95"/>
+          </svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="white" stroke-opacity="0.5"/>
+            <rect x="1.5" y="1.5" width="17" height="9" rx="1.5" fill="white"/>
+            <path d="M23 4v4a2 2 0 0 0 0-4z" fill="white" opacity="0.4"/>
+          </svg>
+        </div>
+      </div>
+      <div class="app-header">
+        <div class="ahi">
+          <div>
+            <span class="ahi-wordmark">SortedWill</span>
+            <span class="ahi-tagline">Wills for England and Wales</span>
+          </div>
+          <div class="acct-btn active">Account</div>
+        </div>
+      </div>
+      <div class="screen-body">
+        <h2 class="s-heading">Enter your code</h2>
+        <p class="s-sub">We sent a 6-digit code to jane@example.com. It works once and lasts 15&nbsp;minutes.</p>
+
+        <!-- OTP boxes: 3 filled · cursor on 4th · 2 empty -->
+        <div class="otp-row">
+          <div class="otp-box filled">3</div>
+          <div class="otp-box filled">7</div>
+          <div class="otp-box filled">1</div>
+          <div class="otp-box cursor"></div>
+          <div class="otp-box"></div>
+          <div class="otp-box"></div>
+        </div>
+
+        <div class="otp-actions">
+          <button class="link-btn">Resend code</button>
+          <!-- Cooldown variant: show "Resend in 44s" (class="link-btn dimmed") during 60s cooldown -->
+          <button class="link-btn secondary">Use a different email</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE B-err: Wrong code (all 6 boxes, error) -->
+  <div class="screen-col">
+    <div class="state-label">B-err — Wrong code</div>
+    <div class="phone">
+      <div class="status-bar">
+        <span class="sb-time">9:41</span>
+        <div class="sb-icons">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="white" aria-hidden="true">
+            <rect x="0" y="8" width="3" height="4" rx="0.5"/>
+            <rect x="4.5" y="5" width="3" height="7" rx="0.5"/>
+            <rect x="9" y="2" width="3" height="10" rx="0.5"/>
+            <rect x="13.5" y="0" width="3" height="12" rx="0.5" opacity="0.35"/>
+          </svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="white" aria-hidden="true">
+            <path d="M8 9.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/>
+            <path d="M3.3 6.3a6.6 6.6 0 0 1 9.4 0l1.1-1.1a8.2 8.2 0 0 0-11.6 0l1.1 1.1z" opacity="0.9"/>
+            <path d="M5.5 8.5a3.5 3.5 0 0 1 5 0l1.1-1.1a5.1 5.1 0 0 0-7.2 0l1.1 1.1z" opacity="0.95"/>
+          </svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="white" stroke-opacity="0.5"/>
+            <rect x="1.5" y="1.5" width="17" height="9" rx="1.5" fill="white"/>
+            <path d="M23 4v4a2 2 0 0 0 0-4z" fill="white" opacity="0.4"/>
+          </svg>
+        </div>
+      </div>
+      <div class="app-header">
+        <div class="ahi">
+          <div>
+            <span class="ahi-wordmark">SortedWill</span>
+            <span class="ahi-tagline">Wills for England and Wales</span>
+          </div>
+          <div class="acct-btn active">Account</div>
+        </div>
+      </div>
+      <div class="screen-body">
+        <h2 class="s-heading">Enter your code</h2>
+        <p class="s-sub">We sent a 6-digit code to jane@example.com. It works once and lasts 15&nbsp;minutes.</p>
+
+        <!-- All boxes clear + red border on error; user re-enters -->
+        <div class="otp-row">
+          <div class="otp-box error cursor"></div>
+          <div class="otp-box error"></div>
+          <div class="otp-box error"></div>
+          <div class="otp-box error"></div>
+          <div class="otp-box error"></div>
+          <div class="otp-box error"></div>
+        </div>
+        <p class="s-error">That code didn't match — check your email and try again.</p>
+
+        <div class="otp-actions">
+          <button class="link-btn">Resend code</button>
+          <button class="link-btn secondary">Use a different email</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE C: Signed in -->
+  <div class="screen-col">
+    <div class="state-label">C — Signed in</div>
+    <div class="phone">
+      <div class="status-bar">
+        <span class="sb-time">9:41</span>
+        <div class="sb-icons">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="white" aria-hidden="true">
+            <rect x="0" y="8" width="3" height="4" rx="0.5"/>
+            <rect x="4.5" y="5" width="3" height="7" rx="0.5"/>
+            <rect x="9" y="2" width="3" height="10" rx="0.5"/>
+            <rect x="13.5" y="0" width="3" height="12" rx="0.5" opacity="0.35"/>
+          </svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="white" aria-hidden="true">
+            <path d="M8 9.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z"/>
+            <path d="M3.3 6.3a6.6 6.6 0 0 1 9.4 0l1.1-1.1a8.2 8.2 0 0 0-11.6 0l1.1 1.1z" opacity="0.9"/>
+            <path d="M5.5 8.5a3.5 3.5 0 0 1 5 0l1.1-1.1a5.1 5.1 0 0 0-7.2 0l1.1 1.1z" opacity="0.95"/>
+          </svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="white" stroke-opacity="0.5"/>
+            <rect x="1.5" y="1.5" width="17" height="9" rx="1.5" fill="white"/>
+            <path d="M23 4v4a2 2 0 0 0 0-4z" fill="white" opacity="0.4"/>
+          </svg>
+        </div>
+      </div>
+      <div class="app-header">
+        <div class="ahi">
+          <div>
+            <span class="ahi-wordmark">SortedWill</span>
+            <span class="ahi-tagline">Wills for England and Wales</span>
+          </div>
+          <!-- Active + initial — per self-review: show identity indicator when signed in -->
+          <div class="acct-btn active">
+            <div class="acct-initial">J</div>
+            Account
+          </div>
+        </div>
+      </div>
+      <div class="screen-body">
+        <h2 class="s-heading">You're signed in</h2>
+        <p class="s-sub">Signed in as jane@example.com. The record of any will you have printed and posted will show up here and on your other devices.</p>
+
+        <div class="s-card">
+          <div class="s-card-title">What an account keeps</div>
+          <p class="s-card-body">Only the record of your printed orders — the order date and a reference number — so you can see them on another device. It does not keep your will, your name, or anything you typed into it. Those stay on the device you wrote them on, exactly as before. <strong style="color:var(--text)">Your will is not included in iCloud or device backups.</strong> Signing out here removes the synced record from this device.</p>
+        </div>
+
+        <button class="s-btn-secondary">Sign out</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /screens-row -->
+
+<!-- ---- SPEC ---- -->
+<div class="spec-section">
+<div class="spec-inner">
+
+<h2>Design decisions</h2>
+
+<!-- 1. Sign-in -->
+<div class="decision-block">
+  <h3>1. Sign-in mechanism</h3>
+  <span class="badge badge-ship">Ship v1: Option A — 6-digit email OTP</span>
+  <span class="badge badge-hold">Hold v2: Option B — Universal Link</span>
+
+  <table class="cmp-table">
+    <tr>
+      <th style="width:110px"></th>
+      <th class="rec">A — 6-digit OTP (recommended) ✓</th>
+      <th>B — Universal Link</th>
+    </tr>
+    <tr>
+      <td class="row-label">How it works</td>
+      <td class="otp-col">Server emails 6 digits. User switches to Mail, reads code, returns to app, types code in State B. App POSTs to <code>/auth/otp/verify</code>, receives session token.</td>
+      <td>Server emails a <code>?login=&lt;token&gt;</code> link. User taps it; iOS reads the app's Associated Domains entitlement and opens SortedWill with the token in the URL.</td>
+    </tr>
+    <tr>
+      <td class="row-label">New server routes</td>
+      <td class="otp-col"><code>POST /api/v1/auth/otp/request</code><br><code>POST /api/v1/auth/otp/verify</code></td>
+      <td>Same two routes, but email body changes from code to link. Plus: host AASA JSON at <code>/.well-known/apple-app-site-association</code>.</td>
+    </tr>
+    <tr>
+      <td class="row-label">New app work</td>
+      <td class="otp-col">OTP entry screen (States B/B-err). No entitlements. Works on Expo Go and simulator.</td>
+      <td>Add <code>Associated Domains</code> entitlement (<code>applinks:sortedwill.com</code>). Handle <code>Linking.addEventListener</code> in root navigator. Requires signed EAS build — not simulator.</td>
+    </tr>
+    <tr>
+      <td class="row-label">Failure modes</td>
+      <td class="otp-col">Code spam-filtered or expired: user taps Resend. App-side only.</td>
+      <td>If AASA unreachable or malformed, iOS falls back to Safari — session token leaks to browser history. Cold-start race may miss the deep-link event.</td>
+    </tr>
+    <tr>
+      <td class="row-label">UX friction</td>
+      <td class="otp-col">One extra step: switch to Mail, read code, type. Familiar and trusted for UK users. iOS may autofill the code from the notification.</td>
+      <td>Lower friction: one tap in Mail. Requires app installed and AASA correct.</td>
+    </tr>
+  </table>
+
+  <div class="impl">
+    <strong>Implementation notes for Nano:</strong>
+    <ul>
+      <li><code>POST /api/v1/auth/otp/request</code> — accepts <code>{ email }</code>, generates a 6-digit code (HMAC-TOTP or random, 15-min TTL, store hash server-side), sends email. Same non-disclosing response whether account exists: <code>{ ok: true }</code> — same behaviour as the web magic-link path.</li>
+      <li><code>POST /api/v1/auth/otp/verify</code> — accepts <code>{ email, code }</code>, validates hash. Returns <code>{ token: "…" }</code> on success or <code>{ error: "invalid_code" }</code> on failure. Rate-limit: 5 attempts per email per 10 min.</li>
+      <li>OTP State B auto-submits when the 6th digit is entered. On <code>invalid_code</code>: clear all 6 boxes, show B-err error message, focus box 1. Re-enable Resend immediately.</li>
+      <li>Resend cooldown: 60 s. Show "Resend in 44s" (<code>link-btn dimmed</code>) during cooldown, then re-enable "Resend code". Include SMS-style subject line hint to help iOS Keyboard autofill: <em>"Your SortedWill code is 371294"</em>.</li>
+      <li>The existing <code>requestLogin(email)</code> in <code>print.ts</code> sends the web magic link; the iOS OTP is a separate call. Web flow unchanged.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- 2. Keychain -->
+<div class="decision-block">
+  <h3>2. Session token storage</h3>
+  <span class="badge badge-ship">Ship: iOS Keychain via expo-secure-store</span>
+
+  <p class="body-text">AsyncStorage is unencrypted and included in iCloud/iTunes backups. The session token must live in the iOS Keychain — encrypted at rest, iCloud-excluded by default, wiped on app uninstall.</p>
+
+  <div class="impl">
+    Use <code>expo-secure-store</code> (standard Expo package, no native build needed):
+    <ul>
+      <li>Write on sign-in: <code>await SecureStore.setItemAsync('sw_session_token', token)</code></li>
+      <li>Read on app launch: <code>const token = await SecureStore.getItemAsync('sw_session_token')</code></li>
+      <li>Delete on sign-out or 401: <code>await SecureStore.deleteItemAsync('sw_session_token')</code></li>
+    </ul>
+    Default Keychain accessibility is <code>kSecAttrAccessibleWhenUnlockedThisDeviceOnly</code> — does not migrate via iCloud Keychain (correct: session tokens shouldn't cross devices; user re-authenticates on a new device). No change needed unless cross-device token persistence is ever wanted.
+  </div>
+</div>
+
+<!-- 3. iCloud backup -->
+<div class="decision-block">
+  <h3>3. iCloud / iTunes backup posture</h3>
+  <span class="badge badge-ship">Ship: Exclude will store from backup (not opt-in)</span>
+
+  <p class="body-text">Will content lives in an on-device SQLite database. Files in Expo's <code>documentDirectory</code> ride iCloud and iTunes backups by default — which breaks "your answers never leave this device" at the OS level. Recommendation: exclude unconditionally. Making it opt-in creates a path that quietly contradicts the product's core privacy promise.</p>
+
+  <div class="impl">
+    <strong>Preferred (expo-file-system ≥ v18):</strong> one call after the DB is first opened:
+    <ul>
+      <li><code>await FileSystem.setIsExcludedFromBackup(dbUri, true)</code></li>
+    </ul>
+    <strong>If expo-file-system &lt; v18:</strong>
+    <ul>
+      <li><strong>Config plugin (cleanest):</strong> a small Expo config plugin (~20 lines) sets <code>NSURLIsExcludedFromBackupKey=true</code> on the DB directory at build time. Persistent; survives app updates.</li>
+      <li><strong>Native bridge (pragmatic):</strong> call <code>NSURL.setResourceValues</code> via a one-off native module on first launch. Requires a custom dev client, not Expo Go.</li>
+    </ul>
+    The session token (Decision 2) is already excluded from backup by iOS Keychain — no extra work there.<br><br>
+    <strong>Nano to check:</strong> which expo-file-system version is in the project. If ≥ 18, one liner. If not, flag and I'll scope the config plugin.
+  </div>
+</div>
+
+<!-- 4. Privacy copy -->
+<div class="decision-block">
+  <h3>4. Privacy copy — iOS parity + one addition</h3>
+  <span class="badge badge-ship">Ship: Web copy unchanged + one iOS sentence in State C card</span>
+
+  <p class="body-text">Web copy is already clear and factually accurate. iOS copy matches exactly. One sentence is added to the signed-in card to address the iOS backup question proactively — a user who knows about iCloud will otherwise wonder.</p>
+
+  <div class="impl">
+    <strong>State A — below "Send code" button (exact web copy, word-for-word):</strong><br>
+    "Use the same email you gave when you ordered a printed will. That's how your orders find their way back to you. We keep no copy of your will."
+    <br><br>
+    <strong>State C — "What an account keeps" card (web copy + one sentence added):</strong><br>
+    "Only the record of your printed orders — the order date and a reference number — so you can see them on another device. It does not keep your will, your name, or anything you typed into it. Those stay on the device you wrote them on, exactly as before. <strong>Your will is not included in iCloud or device backups.</strong> Signing out here removes the synced record from this device."
+    <br><br>
+    The bolded sentence is iOS-only. It's factually accurate once Decision 3 is implemented; hold it until backup exclusion is confirmed in build.
+  </div>
+</div>
+
+<!-- 5. Tap target -->
+<div class="decision-block">
+  <h3>5. Account button tap target — fix (self-review item, ship now)</h3>
+  <span class="badge badge-ship">Ship: paddingVertical 7 → 11 in AppHeader.tsx</span>
+
+  <p class="body-text">The Account button in AppHeader currently has <code>paddingVertical: 7</code>, giving ~31 px height. iOS HIG minimum is 44 px. Same applies to "Use a different email" and "Resend code" in the OTP states.</p>
+
+  <div class="impl">
+    In <code>AppHeader.tsx styles.accountBtn</code>: <code>paddingVertical: 7</code> → <code>11</code> (11 + 11 + ~13 line-height ≈ 44 px).<br><br>
+    In OTP States B/B-err:
+    <ul>
+      <li>"Resend code" / "Resend in Ns": wrap touchable in <code>minHeight: 44</code></li>
+      <li>"Use a different email": same</li>
+    </ul>
+    This change is in the shared AppHeader — benefits all screens. Net visible change: ~4 px taller button at the right edge of the header; unnoticeable at normal viewing distance.
+  </div>
+</div>
+
+<!-- 6. Signed-in identity indicator -->
+<div class="decision-block">
+  <h3>6. Signed-in identity indicator in AppHeader (self-review item)</h3>
+  <span class="badge badge-ship">Ship: Email initial in Account button when signed in</span>
+
+  <p class="body-text">Currently "Account" looks identical signed-in and signed-out. The signed-in state should signal the persisted session at a glance.</p>
+
+  <div class="impl">
+    When <code>accountActive</code> and a session is present, render a 20 × 20 circle containing the user's email initial inside the Account button (see State C mock). AppHeader needs access to the initial:
+    <ul>
+      <li>Add optional prop <code>accountInitial?: string</code> to <code>AppHeader</code></li>
+      <li>When provided and <code>accountActive</code>: render the circle left of "Account" text</li>
+      <li>Circle style: <code>{ width: 20, height: 20, borderRadius: 10, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' }</code> — initial text: white, 10 px, 700</li>
+    </ul>
+    Derive the initial from <code>account.email[0].toUpperCase()</code>.
+  </div>
+</div>
+
+<!-- Out of scope -->
+<div class="decision-block" style="background:#FAFAFA; border-color:#E5E7EB;">
+  <h3 style="color:var(--text-light);">Out of scope — not v1</h3>
+  <p style="font-size:13px; color:var(--text-light); line-height:19px;">
+    <strong>Sign in with Apple</strong> — worth doing eventually; requires Apple Developer config and a consent screen. Hold until after iOS launch.<br><br>
+    <strong>Universal Link (magic link)</strong> — specced above as Option B; hold for v2 once app is in production and AASA infrastructure is in place.<br><br>
+    <strong>Dynamic Type</strong> — the base system font stack already responds to Dynamic Type. No extra account-screen work needed.<br><br>
+    <strong>Android</strong> — this spec is iOS-only. The OTP screen and Keychain decision need a parallel Android spec (Keystore + credential manager) when that build is scoped.
+  </p>
+</div>
+
+<!-- API note -->
+<div class="decision-block" style="background:#F5F8FF;">
+  <h3>API contract — pending</h3>
+  <span class="badge badge-note">Flag Nano when ready to scope</span>
+  <p class="body-text" style="margin-top:8px; margin-bottom:0">
+    New routes needed: <code>POST /api/v1/auth/otp/request</code> and <code>POST /api/v1/auth/otp/verify</code> — shape documented in Decision 1. The signed-in state reads from whatever the existing session/account endpoint returns (parity with web). No new account data fields required; sync still carries only <code>orderDate + referenceNumber</code>.
+  </p>
+</div>
+
+</div><!-- /spec-inner -->
+</div><!-- /spec-section -->
+
+</body>
+</html>

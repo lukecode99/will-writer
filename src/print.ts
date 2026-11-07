@@ -127,9 +127,41 @@ export async function submitPrint(args: {
  */
 const ACCOUNT_KEY = 'sortedwill.account.v1';
 
+// On iOS the session token is the one secret worth protecting, so it lives in
+// the Keychain (via expo-secure-store) rather than AsyncStorage's plist. The
+// email is not sensitive and stays in AsyncStorage so a signed-in UI can show
+// it without unlocking the Keychain. On web there is no Keychain, so the whole
+// account stays in AsyncStorage exactly as before. expo-secure-store is a native
+// module with no web implementation, so it is required lazily, never on web.
+const SecureStore: any = Platform.OS === 'web' ? null : require('expo-secure-store');
+const SESSION_TOKEN_KEY = 'sw_session_token'; // iOS Keychain item
+const ACCOUNT_EMAIL_KEY = 'sortedwill.account.email.v1'; // non-secret
+
 export interface Account {
   email: string;
   sessionToken: string;
+}
+
+/** Persist the signed-in account, Keychain-backed on iOS, AsyncStorage on web. */
+async function persistAccount(account: Account): Promise<void> {
+  if (Platform.OS === 'web' || !SecureStore) {
+    await AsyncStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
+    return;
+  }
+  await SecureStore.setItemAsync(SESSION_TOKEN_KEY, account.sessionToken, {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  });
+  await AsyncStorage.setItem(ACCOUNT_EMAIL_KEY, account.email);
+}
+
+/** Wipe the signed-in account from whichever store holds it. */
+async function clearAccountStore(): Promise<void> {
+  if (Platform.OS === 'web' || !SecureStore) {
+    await AsyncStorage.removeItem(ACCOUNT_KEY);
+    return;
+  }
+  await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY).catch(() => {});
+  await AsyncStorage.removeItem(ACCOUNT_EMAIL_KEY);
 }
 
 /** A printed-order record as the worker syncs it: no will content, no name. */
@@ -170,27 +202,71 @@ export async function verifyLogin(token: string): Promise<Account> {
     throw err;
   }
   const account: Account = { email: data.email, sessionToken: data.sessionToken };
-  await AsyncStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
+  await persistAccount(account);
+  return account;
+}
+
+/**
+ * iOS sign-in, step 1: ask the worker to email a 6-digit code. Like
+ * requestLogin, always resolves the same way regardless of whether the address
+ * has an account — the UI just moves to the "enter code" state.
+ */
+export async function requestOtp(email: string): Promise<void> {
+  await fetch(`${PRINT_API}/auth/otp/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  }).catch(() => {
+    /* Same reasoning as requestLogin: a transient failure must still read as
+       "we sent a code" — no enumeration, and the user can ask again. */
+  });
+}
+
+/**
+ * iOS sign-in, step 2: exchange the typed code for a session. Throws with a
+ * `code` of 'wrong_code' / 'too_many_attempts' / 'invalid' so the screen can
+ * tell "that code was wrong" apart from "ask for a new one".
+ */
+export async function verifyOtp(email: string, code: string): Promise<Account> {
+  const res = await fetch(`${PRINT_API}/auth/otp/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok || !data.sessionToken || !data.email) {
+    const err = new Error(data.error || `login failed (${res.status})`);
+    (err as any).code = data.error;
+    throw err;
+  }
+  const account: Account = { email: data.email, sessionToken: data.sessionToken };
+  await persistAccount(account);
   return account;
 }
 
 /** The signed-in account on this device, or null. */
 export async function loadAccount(): Promise<Account | null> {
-  const raw = await AsyncStorage.getItem(ACCOUNT_KEY);
-  if (!raw) return null;
-  try {
-    const a = JSON.parse(raw);
-    if (a && typeof a.email === 'string' && typeof a.sessionToken === 'string') return a;
-  } catch {
-    /* unreadable — treat as signed out */
+  if (Platform.OS === 'web' || !SecureStore) {
+    const raw = await AsyncStorage.getItem(ACCOUNT_KEY);
+    if (!raw) return null;
+    try {
+      const a = JSON.parse(raw);
+      if (a && typeof a.email === 'string' && typeof a.sessionToken === 'string') return a;
+    } catch {
+      /* unreadable — treat as signed out */
+    }
+    return null;
   }
+  const sessionToken = await SecureStore.getItemAsync(SESSION_TOKEN_KEY).catch(() => null);
+  const email = await AsyncStorage.getItem(ACCOUNT_EMAIL_KEY);
+  if (sessionToken && email) return { email, sessionToken };
   return null;
 }
 
 /** Sign out on this device, and best-effort revoke the session server-side. */
 export async function logoutAccount(): Promise<void> {
   const acct = await loadAccount();
-  await AsyncStorage.removeItem(ACCOUNT_KEY);
+  await clearAccountStore();
   if (acct) {
     fetch(`${PRINT_API}/auth/logout`, {
       method: 'POST',
@@ -217,7 +293,7 @@ export async function fetchAccountOrders(): Promise<SyncedOrder[] | null> {
     return null; // offline — keep the session, just no sync this time
   }
   if (res.status === 401) {
-    await AsyncStorage.removeItem(ACCOUNT_KEY);
+    await clearAccountStore();
     return null;
   }
   const data = await res.json().catch(() => ({}));

@@ -16,6 +16,8 @@ interface Props {
   onDelete: (id: string) => void;
   onLogoPress: () => void;
   onAccount: () => void;
+  /** First letter of the signed-in account's email, for the header indicator. */
+  accountInitial?: string;
 }
 
 function statusOf(id: string): { label: string; done: boolean } {
@@ -71,13 +73,13 @@ function addWorkingDays(ms: number, days: number): number {
   return d.getTime();
 }
 
-export default function Home({ wills, printed, onCreate, onOpen, onDelete, onLogoPress, onAccount }: Props) {
+export default function Home({ wills, printed, onCreate, onOpen, onDelete, onLogoPress, onAccount, accountInitial }: Props) {
   const insets = useSafeAreaInsets();
   const [showGuide, setShowGuide] = useState(false);
 
   return (
     <View style={styles.root}>
-      <AppHeader onLogoPress={onLogoPress} onAccount={onAccount} />
+      <AppHeader onLogoPress={onLogoPress} onAccount={onAccount} accountInitial={accountInitial} />
 
       <ScrollView contentContainerStyle={[shared.scrollContent, { paddingBottom: insets.bottom + 48 }]}>
         <View style={styles.column}>
