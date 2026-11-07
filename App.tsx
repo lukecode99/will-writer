@@ -505,7 +505,7 @@ export default function App() {
           // which is what re-runs the initialisers that read it out of storage.
           <Wizard key={activeId} id={activeId} onHome={goHome} />
         ) : view === 'landing' ? (
-          <Landing onStart={() => setView('home')} />
+          <Landing onStart={() => setView('home')} onAccount={() => setView('account')} />
         ) : view === 'account' ? (
           <Account
             account={account}

@@ -11,10 +11,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, shared, CONTENT_MAX_WIDTH } from './shared';
 import { Bullets, NOT_SUITABLE } from './guide';
+import AppHeader from '../components/AppHeader';
 
 interface Props {
   /** Enter the app proper — the start / saved-wills screen. */
   onStart: () => void;
+  /** Open the account screen from the standing top bar. */
+  onAccount: () => void;
 }
 
 /**
@@ -68,17 +71,14 @@ function openLegal(page: 'terms' | 'privacy' | 'refund') {
   Linking.openURL(`https://sortedwill.co.uk${path}`).catch(() => {});
 }
 
-export default function Landing({ onStart }: Props) {
+export default function Landing({ onStart, onAccount }: Props) {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
-        <View style={styles.headerInner}>
-          <Text style={styles.appTitle}>SortedWill</Text>
-          <Text style={styles.appSub}>Wills for England and Wales</Text>
-        </View>
-      </View>
+      {/* The homepage is the front door, so the wordmark here is already "home"
+          — it stays put rather than navigating anywhere. */}
+      <AppHeader onLogoPress={() => {}} onAccount={onAccount} />
 
       <ScrollView contentContainerStyle={[shared.scrollContent, { paddingBottom: insets.bottom + 48 }]}>
         <View style={styles.column}>
@@ -184,26 +184,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: C.background,
-  },
-  header: {
-    backgroundColor: C.primary,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  headerInner: {
-    width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
-    alignSelf: 'center',
-  },
-  appTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  appSub: {
-    color: '#C7D6EA',
-    fontSize: 13,
-    marginTop: 2,
   },
   column: {
     width: '100%',

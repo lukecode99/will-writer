@@ -6,6 +6,7 @@ import { blockingProblems } from '../validation';
 import { confirmDestructive } from '../platform';
 import { C, shared, CONTENT_MAX_WIDTH } from './shared';
 import { SuitabilityLists } from './guide';
+import AppHeader from '../components/AppHeader';
 
 interface Props {
   wills: WillSummary[];
@@ -76,27 +77,7 @@ export default function Home({ wills, printed, onCreate, onOpen, onDelete, onLog
 
   return (
     <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
-        <View style={styles.headerInner}>
-          <TouchableOpacity
-            style={styles.headerTitleBlock}
-            onPress={onLogoPress}
-            accessibilityRole="link"
-            accessibilityLabel="SortedWill — go to the home page"
-          >
-            <Text style={styles.appTitle}>SortedWill</Text>
-            <Text style={styles.appSub}>Wills for England and Wales</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.accountBtn}
-            onPress={onAccount}
-            accessibilityRole="button"
-            accessibilityLabel="Your account"
-          >
-            <Text style={styles.accountBtnText}>Account</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <AppHeader onLogoPress={onLogoPress} onAccount={onAccount} />
 
       <ScrollView contentContainerStyle={[shared.scrollContent, { paddingBottom: insets.bottom + 48 }]}>
         <View style={styles.column}>
@@ -229,45 +210,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: C.background,
-  },
-  header: {
-    backgroundColor: C.primary,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  headerInner: {
-    width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerTitleBlock: {
-    flexShrink: 1,
-  },
-  accountBtn: {
-    borderWidth: 1.5,
-    borderColor: '#4A6894',
-    borderRadius: 8,
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    marginLeft: 12,
-  },
-  accountBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  appTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  appSub: {
-    color: '#C7D6EA',
-    fontSize: 13,
-    marginTop: 2,
   },
   column: {
     width: '100%',
