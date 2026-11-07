@@ -17,6 +17,7 @@ on:
       - 'package.json'
       - 'metro.config.js'
       - 'babel.config.js'
+      - 'plugins/**'
       - '.github/workflows/ios.yml'
 
 # Only one iOS build at a time. The build number is not decided in this file:

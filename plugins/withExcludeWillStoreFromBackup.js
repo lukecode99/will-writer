@@ -44,9 +44,14 @@ module.exports = function withExcludeWillStoreFromBackup(config) {
         tag: 'sortedwill-exclude-backup',
         src: cfg.modResults.contents,
         newSrc: SNIPPET,
-        // Insert right after the didFinishLaunching signature opens its body.
-        anchor: /didFinishLaunchingWithOptions:[^\n]*\n?\s*\{/,
-        offset: 1,
+        // mergeContents matches the anchor against each line individually, so the
+        // anchor must fit on ONE line. In the SDK 52 AppDelegate.mm the method
+        // signature and its opening `{` are on separate lines, so we anchor on
+        // the signature line (the only one carrying the `(NSDictionary` argument
+        // — the `return [super …]` line reads `:launchOptions`, so it won't
+        // match) and use offset 2 to land just past the `{`, inside the body.
+        anchor: /didFinishLaunchingWithOptions:\(NSDictionary/,
+        offset: 2,
         comment: '//',
       });
       cfg.modResults.contents = merged.contents;
