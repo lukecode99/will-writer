@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { Button } from '../ui';
 import { WillData, Guardian, GuardianRole } from '../types';
 import { C, shared } from './shared';
 import { confirmDestructive } from '../platform';
@@ -179,21 +180,15 @@ export default function Guardians({ data, onChange, onNext, onBack }: Props) {
         </View>
       ) : null}
 
-      <TouchableOpacity
-        style={[shared.primaryBtn, blocked ? shared.btnDisabled : null]}
+      <Button
+        label={primaries.length === 0 ? 'Skip (no guardians)' : 'Continue'}
         onPress={() => { if (!blocked) onNext(); }}
         disabled={blocked}
-      >
-        <Text style={shared.primaryBtnText}>
-          {primaries.length === 0 ? 'Skip (no guardians)' : 'Continue'}
-        </Text>
-      </TouchableOpacity>
+      />
       {unnamed ? (
         <Text style={shared.error}>Give every guardian a name, or remove the blank one, before continuing.</Text>
       ) : null}
-      <TouchableOpacity style={shared.secondaryBtn} onPress={onBack}>
-        <Text style={shared.secondaryBtnText}>Back</Text>
-      </TouchableOpacity>
+      <Button label="Back" variant="secondary" onPress={onBack} />
     </ScrollView>
   );
 }

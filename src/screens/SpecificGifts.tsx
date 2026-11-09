@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
+import { Button } from '../ui';
 import { WillData, SpecificGift, GiftSubstitutionType, GiftTaxBurden, NamedSubstituteFallback } from '../types';
 import { blockingProblems } from '../validation';
 import { knownPeople } from '../people';
@@ -490,14 +491,11 @@ export default function SpecificGifts({ data, onChange, onNext, onBack }: Props)
         <Text style={shared.addBtnText}>+ Add a specific gift</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={shared.primaryBtn} onPress={handleNext}>
-        <Text style={shared.primaryBtnText}>
-          {data.specificGifts.length === 0 ? 'Skip (no specific gifts)' : 'Continue'}
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={shared.secondaryBtn} onPress={onBack}>
-        <Text style={shared.secondaryBtnText}>Back</Text>
-      </TouchableOpacity>
+      <Button
+        label={data.specificGifts.length === 0 ? 'Skip (no specific gifts)' : 'Continue'}
+        onPress={handleNext}
+      />
+      <Button label="Back" variant="secondary" onPress={onBack} />
     </ScrollView>
   );
 }

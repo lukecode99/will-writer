@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { Button } from '../ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WillSummary, PrintedWill, loadWillData } from '../storage';
 import { blockingProblems } from '../validation';
@@ -89,13 +90,9 @@ export default function Home({ wills, printed, onCreate, onOpen, onDelete, onLog
             person the will belongs to is the one who has to sign it.
           </Text>
 
-          <TouchableOpacity style={shared.primaryBtn} onPress={() => onCreate(false)}>
-            <Text style={shared.primaryBtnText}>A will for me</Text>
-          </TouchableOpacity>
+          <Button label="A will for me" onPress={() => onCreate(false)} />
 
-          <TouchableOpacity style={shared.secondaryBtn} onPress={() => onCreate(true)}>
-            <Text style={shared.secondaryBtnText}>A will for someone else</Text>
-          </TouchableOpacity>
+          <Button label="A will for someone else" variant="secondary" onPress={() => onCreate(true)} />
 
           {wills.length > 0 ? (
             <>

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
+import { View, Text, TextInput, ScrollView, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Account as AccountType, requestLogin, requestOtp, verifyOtp } from '../print';
 import { C, shared, CONTENT_MAX_WIDTH } from './shared';
 import AppHeader from '../components/AppHeader';
+import { Button } from '../ui';
 
 interface Props {
   account: AccountType | null;
@@ -123,13 +124,7 @@ export default function Account({ account, onLogoPress, onLogout, onSignedIn }: 
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={shared.secondaryBtn}
-                onPress={onLogout}
-                accessibilityRole="button"
-              >
-                <Text style={shared.secondaryBtnText}>Sign out</Text>
-              </TouchableOpacity>
+              <Button label="Sign out" variant="secondary" onPress={onLogout} />
             </>
           ) : sent && USE_OTP ? (
             <>
@@ -158,22 +153,9 @@ export default function Account({ account, onLogoPress, onLogout, onSignedIn }: 
               />
               {codeError ? <Text style={shared.error}>{codeError}</Text> : null}
 
-              <TouchableOpacity
-                style={[shared.primaryBtn, verifying ? shared.btnDisabled : null]}
-                onPress={verify}
-                disabled={verifying}
-                accessibilityRole="button"
-              >
-                <Text style={shared.primaryBtnText}>{verifying ? 'Checking…' : 'Sign in'}</Text>
-              </TouchableOpacity>
+              <Button label={verifying ? 'Checking…' : 'Sign in'} onPress={verify} disabled={verifying} />
 
-              <TouchableOpacity
-                style={shared.secondaryBtn}
-                onPress={startOver}
-                accessibilityRole="button"
-              >
-                <Text style={shared.secondaryBtnText}>Use a different email</Text>
-              </TouchableOpacity>
+              <Button label="Use a different email" variant="secondary" onPress={startOver} />
             </>
           ) : sent ? (
             <>
@@ -182,13 +164,7 @@ export default function Account({ account, onLogoPress, onLogout, onSignedIn }: 
                 If {email.trim()} is a SortedWill account, a sign-in link is on its way. Open it on
                 this device to sign in. The link works once and lasts 15 minutes.
               </Text>
-              <TouchableOpacity
-                style={shared.secondaryBtn}
-                onPress={startOver}
-                accessibilityRole="button"
-              >
-                <Text style={shared.secondaryBtnText}>Use a different email</Text>
-              </TouchableOpacity>
+              <Button label="Use a different email" variant="secondary" onPress={startOver} />
             </>
           ) : (
             <>
@@ -215,16 +191,11 @@ export default function Account({ account, onLogoPress, onLogout, onSignedIn }: 
               />
               {invalid ? <Text style={shared.error}>Enter a valid email address.</Text> : null}
 
-              <TouchableOpacity
-                style={[shared.primaryBtn, sending ? shared.btnDisabled : null]}
+              <Button
+                label={sending ? 'Sending…' : USE_OTP ? 'Email me a code' : 'Email me a sign-in link'}
                 onPress={send}
                 disabled={sending}
-                accessibilityRole="button"
-              >
-                <Text style={shared.primaryBtnText}>
-                  {sending ? 'Sending…' : USE_OTP ? 'Email me a code' : 'Email me a sign-in link'}
-                </Text>
-              </TouchableOpacity>
+              />
 
               <Text style={styles.privacyNote}>
                 Use the same email you gave when you ordered a printed will. That's how your orders

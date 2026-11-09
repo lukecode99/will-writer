@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Switch, StyleSheet } from 'react-native';
+import { Button } from '../ui';
 import { WillData, Beneficiary, NamedSubstituteFallback, Substitute, SubstitutionType } from '../types';
 import { blockingProblems, minorFlagWarning, parsePercentage, percentageTotal } from '../validation';
 import { KnownPerson, knownPeople, knownRefs } from '../people';
@@ -778,9 +779,7 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
               <Text style={styles.chipText}>+ Someone else</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={shared.secondaryBtn} onPress={() => setChoosing(false)}>
-            <Text style={shared.secondaryBtnText}>Cancel</Text>
-          </TouchableOpacity>
+          <Button label="Cancel" variant="secondary" onPress={() => setChoosing(false)} />
         </View>
       ) : (
         <TouchableOpacity
@@ -820,12 +819,8 @@ export default function ResiduaryEstate({ data, onChange, onNext, onBack }: Prop
       )}
       <ScopeNotice text={data.ultimateBackstop} />
 
-      <TouchableOpacity style={shared.primaryBtn} onPress={handleNext}>
-        <Text style={shared.primaryBtnText}>Continue</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={shared.secondaryBtn} onPress={onBack}>
-        <Text style={shared.secondaryBtnText}>Back</Text>
-      </TouchableOpacity>
+      <Button label="Continue" onPress={handleNext} />
+      <Button label="Back" variant="secondary" onPress={onBack} />
     </ScrollView>
   );
 }

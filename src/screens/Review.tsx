@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { Button, haptic } from '../ui';
 import { WillData, Beneficiary, SubstitutionType, SpecificGift, SecondExecutorRole } from '../types';
 import { hasMinorChildren } from '../family';
 import { C, shared } from './shared';
@@ -541,7 +542,7 @@ export default function Review({ id, data, onEdit, onBack, onRestart }: Props) {
 
       <TouchableOpacity
         style={[shared.primaryBtn, (generating || !canGenerate) ? styles.btnDisabled : null]}
-        onPress={handleGenerate}
+        onPress={() => { haptic(); handleGenerate(); }}
         disabled={generating || !canGenerate}
       >
         {generating
@@ -554,13 +555,13 @@ export default function Review({ id, data, onEdit, onBack, onRestart }: Props) {
         }
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[shared.secondaryBtn, { marginTop: 10 }, (generating || !canGenerate) ? styles.btnDisabled : null]}
+      <Button
+        label="📬  Print &amp; post my will — £14.99"
+        variant="secondary"
         onPress={handlePrintService}
         disabled={generating || !canGenerate}
-      >
-        <Text style={shared.secondaryBtnText}>📬  Print &amp; post my will — £14.99</Text>
-      </TouchableOpacity>
+        style={{ marginTop: 10 }}
+      />
 
       {!canGenerate ? (
         <Text style={styles.blockedNote}>
@@ -570,9 +571,7 @@ export default function Review({ id, data, onEdit, onBack, onRestart }: Props) {
         </Text>
       ) : null}
 
-      <TouchableOpacity style={[shared.secondaryBtn, { marginTop: 8 }]} onPress={onBack}>
-        <Text style={shared.secondaryBtnText}>Back</Text>
-      </TouchableOpacity>
+      <Button label="Back" variant="secondary" onPress={onBack} style={{ marginTop: 8 }} />
 
       {/* This used to be "Start over", which wiped the answers. Now that the
           app holds more than one will, the same tap means "leave this one and

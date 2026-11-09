@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { Button } from '../ui';
 import { WillData, Child } from '../types';
 import { dobError, parseUkDate, ageInYears, childrenSummary, formatUkDateInput } from '../family';
 import { unprintableChars } from '../text';
@@ -274,16 +275,12 @@ export default function PartnerChildren({ data, onChange, onNext, onBack }: Prop
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity
-        style={[shared.primaryBtn, canContinue ? null : shared.btnDisabled]}
+      <Button
+        label="Continue"
         onPress={() => { if (canContinue) onNext(); }}
         disabled={!canContinue}
-      >
-        <Text style={shared.primaryBtnText}>Continue</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={shared.secondaryBtn} onPress={onBack}>
-        <Text style={shared.secondaryBtnText}>Back</Text>
-      </TouchableOpacity>
+      />
+      <Button label="Back" variant="secondary" onPress={onBack} />
     </ScrollView>
   );
 }

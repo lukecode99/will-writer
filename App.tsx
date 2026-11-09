@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
+  Animated,
+  Easing,
   StatusBar,
   StyleSheet,
   ActivityIndicator,
@@ -108,6 +110,23 @@ function Wizard({ id, onHome }: WizardProps) {
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Step transition. iOS pushes/pops screens with a slide; the wizard used to
+  // hard-cut between steps, which is the clearest "this is a web page" tell.
+  // `dir` is set by the nav functions below (+1 forward, -1 back) and read when
+  // the new step mounts, so Continue slides in from the right and Back from the
+  // left. Native-driven where possible; a harmless fade on web.
+  const dir = useRef<1 | -1>(1);
+  const stepAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    stepAnim.setValue(0);
+    Animated.timing(stepAnim, {
+      toValue: 1,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, [step, stepAnim]);
+
   const needsGuardians = hasMinorChildren(data);
 
   const update = useCallback((updates: Partial<WillData>) => {
@@ -191,6 +210,7 @@ function Wizard({ id, onHome }: WizardProps) {
   }, []);
 
   function nextStep() {
+    dir.current = 1;
     setStep(prev => {
       let next = prev + 1;
       if (next === STEP.guardians && !needsGuardians) next = STEP.gifts;
@@ -199,6 +219,7 @@ function Wizard({ id, onHome }: WizardProps) {
   }
 
   function prevStep() {
+    dir.current = -1;
     setStep(prev => {
       let back = prev - 1;
       if (back === STEP.guardians && !needsGuardians) back = STEP.executors;
@@ -211,6 +232,7 @@ function Wizard({ id, onHome }: WizardProps) {
   // forward flow, because a stale guardian left over from a corrected date of
   // birth has to be editable to be removed.
   function goToStep(key: StepKey) {
+    dir.current = STEP[key] >= step ? 1 : -1;
     setStep(STEP[key]);
   }
 
@@ -242,6 +264,20 @@ function Wizard({ id, onHome }: WizardProps) {
 
   const isReview = step === STEP.review;
 
+  // Slide + fade for the step being shown. dir.current was set by the nav
+  // function that triggered this render, so forward slides in from the right.
+  const stepStyle = {
+    opacity: stepAnim,
+    transform: [
+      {
+        translateX: stepAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [dir.current * 26, 0],
+        }),
+      },
+    ],
+  };
+
   return (
     <View style={styles.root}>
       <ProgressHeader
@@ -267,7 +303,7 @@ function Wizard({ id, onHome }: WizardProps) {
         {/* On an iPad a full-width form is a single line of text stretched
             across 10 inches. Cap it and centre it; the gutters take the same
             background so it reads as a page, not a floating panel. */}
-        <View style={[styles.column, { paddingBottom: insets.bottom }]}>
+        <Animated.View style={[styles.column, { paddingBottom: insets.bottom }, stepStyle]}>
           {step === STEP.about && (
             <AboutYou data={data} onChange={update} onNext={nextStep} />
           )}
@@ -298,7 +334,7 @@ function Wizard({ id, onHome }: WizardProps) {
               onRestart={leave}
             />
           )}
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </View>
   );

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { Button } from '../ui';
 import { WillData, BurialPreference } from '../types';
 import { C, shared } from './shared';
 import { ScopeNotice } from '../components/ScopeNotice';
@@ -56,14 +57,11 @@ export default function FuneralWishes({ data, onChange, onNext, onBack }: Props)
       />
       <ScopeNotice text={data.funeralWishes} />
 
-      <TouchableOpacity style={shared.primaryBtn} onPress={onNext}>
-        <Text style={shared.primaryBtnText}>
-          {data.burialPreference || data.funeralWishes ? 'Continue' : 'Skip (no wishes to record)'}
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={shared.secondaryBtn} onPress={onBack}>
-        <Text style={shared.secondaryBtnText}>Back</Text>
-      </TouchableOpacity>
+      <Button
+        label={data.burialPreference || data.funeralWishes ? 'Continue' : 'Skip (no wishes to record)'}
+        onPress={onNext}
+      />
+      <Button label="Back" variant="secondary" onPress={onBack} />
     </ScrollView>
   );
 }

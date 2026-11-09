@@ -14,6 +14,7 @@ import {
 import { C, shared, CONTENT_MAX_WIDTH } from './shared';
 import { notify } from '../platform';
 import { createOrder, beginCheckout, PostalAddress } from '../print';
+import { haptic } from '../ui';
 
 interface Props {
   visible: boolean;
@@ -151,7 +152,7 @@ export default function PrintPostModal({ visible, willId, defaultAddress, onClos
 
             <TouchableOpacity
               style={[shared.primaryBtn, !canPay ? shared.btnDisabled : null]}
-              onPress={pay}
+              onPress={() => { haptic(); pay(); }}
               disabled={!canPay}
             >
               {busy ? (

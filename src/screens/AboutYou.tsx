@@ -4,6 +4,7 @@ import { WillData, MaritalStatus } from '../types';
 import { dobError, parseUkDate, ageInYears, formatUkDateInput } from '../family';
 import { unprintableChars } from '../text';
 import { C, shared } from './shared';
+import { Button, haptic } from '../ui';
 
 interface Props {
   data: WillData;
@@ -121,6 +122,9 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
         value={data.fullName}
         onChangeText={v => edit('fullName', { fullName: v })}
         autoCapitalize="words"
+        textContentType="name"
+        autoComplete="name"
+        returnKeyType="next"
       />
       {errors.fullName ? <Text style={shared.error}>{errors.fullName}</Text> : null}
 
@@ -132,6 +136,8 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
         onChangeText={v => edit('address', { address: v })}
         multiline
         numberOfLines={3}
+        textContentType="fullStreetAddress"
+        autoComplete="street-address"
       />
       {errors.address ? <Text style={shared.error}>{errors.address}</Text> : null}
 
@@ -151,11 +157,12 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
           <TouchableOpacity
             key={opt.value}
             style={[styles.chip, data.maritalStatus === opt.value ? styles.chipActive : null]}
-            onPress={() =>
+            onPress={() => {
+              haptic();
               opt.value === 'married' || opt.value === 'civilPartnership'
                 ? edit('maritalStatus', { maritalStatus: opt.value, expectingMarriage: false, intendedSpouseName: '' })
-                : edit('maritalStatus', { maritalStatus: opt.value })
-            }
+                : edit('maritalStatus', { maritalStatus: opt.value });
+            }}
           >
             <Text style={[styles.chipText, data.maritalStatus === opt.value ? styles.chipTextActive : null]}>
               {opt.label}
@@ -165,9 +172,7 @@ export default function AboutYou({ data, onChange, onNext }: Props) {
       </View>
       {errors.maritalStatus ? <Text style={shared.error}>{errors.maritalStatus}</Text> : null}
 
-      <TouchableOpacity style={shared.primaryBtn} onPress={() => validate() && onNext()}>
-        <Text style={shared.primaryBtnText}>Continue</Text>
-      </TouchableOpacity>
+      <Button label="Continue" onPress={() => validate() && onNext()} />
     </ScrollView>
   );
 }

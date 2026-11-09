@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { Button } from '../ui';
 import { WillData, Executor } from '../types';
 import { blockingProblems } from '../validation';
 import { C, shared } from './shared';
@@ -186,8 +187,8 @@ export default function Executors({ data, onChange, onNext, onBack }: Props) {
         </Text>
       ) : null}
 
-      <TouchableOpacity
-        style={shared.primaryBtn}
+      <Button
+        label="Continue"
         onPress={() => {
           const problems = blockingProblems(data).filter(p => p.step === 'executors');
           if (problems.length > 0) {
@@ -200,12 +201,8 @@ export default function Executors({ data, onChange, onNext, onBack }: Props) {
           }
           onNext();
         }}
-      >
-        <Text style={shared.primaryBtnText}>Continue</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={shared.secondaryBtn} onPress={onBack}>
-        <Text style={shared.secondaryBtnText}>Back</Text>
-      </TouchableOpacity>
+      />
+      <Button label="Back" variant="secondary" onPress={onBack} />
     </ScrollView>
   );
 }

@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, shared, CONTENT_MAX_WIDTH } from './shared';
 import { Bullets, NOT_SUITABLE } from './guide';
 import AppHeader from '../components/AppHeader';
+import { Button } from '../ui';
 
 interface Props {
   /** Enter the app proper — the start / saved-wills screen. */
@@ -89,9 +90,7 @@ export default function Landing({ onStart, onAccount }: Props) {
             and review — you only pay when you want to print it.
           </Text>
 
-          <TouchableOpacity style={shared.primaryBtn} onPress={onStart} accessibilityRole="button">
-            <Text style={shared.primaryBtnText}>Start my will</Text>
-          </TouchableOpacity>
+          <Button label="Start my will" onPress={onStart} />
           <Text style={styles.heroNote}>
             Takes about ten minutes. Nothing to pay to see your finished will.
           </Text>
@@ -150,9 +149,7 @@ export default function Landing({ onStart, onAccount }: Props) {
           <Bullets items={NOT_SUITABLE} marker="✗" color={C.danger} />
 
           {/* Closing CTA */}
-          <TouchableOpacity style={shared.primaryBtn} onPress={onStart} accessibilityRole="button">
-            <Text style={shared.primaryBtnText}>Start my will</Text>
-          </TouchableOpacity>
+          <Button label="Start my will" onPress={onStart} />
 
           <Text style={styles.disclaimer}>
             SortedWill makes single wills under the law of England and Wales. It produces a
