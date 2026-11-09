@@ -11,6 +11,11 @@ import {
   AppState,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  NavigationContainer,
+  createNavigationContainerRef,
+} from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { WillData } from './src/types';
 import {
   hydrateStorage,
@@ -340,17 +345,40 @@ function Wizard({ id, onHome }: WizardProps) {
   );
 }
 
+/**
+ * The four top-level destinations. Giving react-navigation a real native stack
+ * is what buys the genuine iOS feel — edge swipe-back and the system push/pop
+ * transition between screens — in place of the old in-memory `view` switch,
+ * which cross-faded with no gesture and no depth.
+ *
+ * Wizard carries the will id as a route param rather than as app state, so the
+ * stack itself remembers which will is open; everything else is a bare screen.
+ */
+type RootStackParamList = {
+  Landing: undefined;
+  Home: undefined;
+  Account: undefined;
+  Wizard: { id: string };
+};
+
+// A ref to the navigator so the two web return-flow effects below (coming back
+// from Stripe, and following an emailed sign-in link) can redirect without a
+// screen in hand. Deliberately paired with NO `linking` config on the
+// container: react-navigation then keeps its state purely in memory and never
+// touches window.location, so `?session_id=` / `?login=` survive untouched for
+// those effects to read — the money and sign-in flows behave exactly as before.
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
 export default function App() {
   const [ready, setReady] = useState(false);
+  // The navigator mounts a tick after `ready`; the return-flow effects wait on
+  // this before calling navigationRef, so a redirect can't fire into an
+  // un-mounted container.
+  const [navReady, setNavReady] = useState(false);
   const [wills, setWills] = useState<WillSummary[]>([]);
   const [printed, setPrinted] = useState<PrintedWill[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  // Which screen stands in for "no will open": the marketing homepage, the
-  // start / saved-wills screen, or the account screen. A first-time visitor gets
-  // the homepage; someone who already has a draft on the device is a returning
-  // user mid-will, so they skip straight to their wills rather than being
-  // re-sold the service.
-  const [view, setView] = useState<'landing' | 'home' | 'account'>('landing');
   // The signed-in account, if any. An account syncs only the record of printed
   // orders across devices — never a will. Held here so the Account screen and
   // the printed-wills list stay in step.
@@ -378,12 +406,12 @@ export default function App() {
         syncAccountOrders();
       }
       // The marketing homepage is the front door for everyone — first-time
-      // visitor and returning user alike. A returning user is one tap from their
-      // wills (the primary button, or the logo), and the homepage is the page we
-      // want indexed and shared, so it is what the bare domain serves. The one
-      // exception is a return from Stripe Checkout, handled below, which routes
-      // straight to the wills so a paid order is never stranded behind the pitch.
-      setView('landing');
+      // visitor and returning user alike (it is the navigator's initial route).
+      // A returning user is one tap from their wills (the primary button, or the
+      // logo), and the homepage is the page we want indexed and shared, so it is
+      // what the bare domain serves. The one exception is a return from Stripe
+      // Checkout, handled below, which routes straight to the wills so a paid
+      // order is never stranded behind the pitch.
       setReady(true);
     });
   }, []);
@@ -393,7 +421,7 @@ export default function App() {
   // the printer. The worker is idempotent per session, so a refresh mid-flow
   // cannot print twice; we only strip the ?session_id once submission succeeds.
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !navReady) return;
     const sessionId = peekReturnedSession();
     if (!sessionId) return;
     (async () => {
@@ -406,7 +434,7 @@ export default function App() {
       // A return from Checkout is a paid customer, not a fresh visitor: route
       // them off the marketing front door and onto their wills, where the print
       // confirmation and the "Your printed wills" record will land.
-      setView('home');
+      if (navigationRef.isReady()) navigationRef.navigate('Home');
       try {
         const willData = loadWillData(pending.willId);
         const bytes = await generateWillPdf(willData);
@@ -464,14 +492,14 @@ export default function App() {
         );
       }
     })();
-  }, [ready]);
+  }, [ready, navReady]);
 
   // Arriving on an emailed sign-in link (`/?login=<token>`, web). Exchange the
   // one-time token for a session, pull the account's synced orders, and land on
   // the account screen so the sign-in reads as having worked. The token is
   // stripped from the URL either way, so a refresh cannot replay a spent link.
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !navReady) return;
     const token = peekLoginToken();
     if (!token) return;
     (async () => {
@@ -479,13 +507,13 @@ export default function App() {
         const acct = await verifyLogin(token);
         setAccount(acct);
         await syncAccountOrders();
-        setView('account');
+        if (navigationRef.isReady()) navigationRef.navigate('Account');
       } catch (err) {
         console.warn('sign-in link failed', err);
         // A spent or expired link is the common case, not an error worth a
         // modal: drop them on the account screen signed-out, where they can ask
         // for a fresh link.
-        setView('account');
+        if (navigationRef.isReady()) navigationRef.navigate('Account');
         notify(
           'That sign-in link has expired or already been used. Enter your email to get a new one.',
           'Link expired',
@@ -494,79 +522,112 @@ export default function App() {
         clearReturnParam();
       }
     })();
-  }, [ready]);
+  }, [ready, navReady]);
 
-  function open(id: string) {
-    setActiveId(id);
-  }
-
-  function create(isForSomeoneElse: boolean) {
-    setActiveId(createWill(isForSomeoneElse));
-  }
-
-  function remove(id: string) {
-    deleteWill(id);
-    setWills(listWills());
-  }
-
-  // The list is rebuilt on the way out rather than kept in sync while editing:
-  // it is only ever on screen when no will is open, and rebuilding it on every
-  // keystroke would re-render the whole home screen behind the wizard.
-  function goHome() {
-    setActiveId(null);
+  // Rebuild the start / saved-wills lists from storage. Done on the way out of
+  // the wizard rather than kept in sync while editing: the list is only ever on
+  // screen when no will is open, and rebuilding it on every keystroke would
+  // re-render the whole home screen behind the wizard. The wizard flushes to
+  // storage before it calls back, so by the time this runs the data is current.
+  const refreshLists = useCallback(() => {
     setWills(listWills());
     setPrinted(listPrintedWills());
-    // Coming out of a will, the start / saved-wills screen is the right place
-    // to land — never back to the marketing homepage.
-    setView('home');
-  }
+  }, []);
+
+  const remove = useCallback((id: string) => {
+    deleteWill(id);
+    setWills(listWills());
+  }, []);
 
   // Sign out: drop the local session, clear the synced orders from memory (so a
   // shared device never leaves one person's order list for the next), rebuild
   // the printed list from this device's own records, and return to the wills.
-  async function logout() {
+  const logout = useCallback(async () => {
     await logoutAccount();
     setAccount(null);
     setSyncedPrintedWills([]);
     setPrinted(listPrintedWills());
-    setView('home');
-  }
+    if (navigationRef.isReady()) navigationRef.navigate('Home');
+  }, []);
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.surface} />
       {ready ? (
-        activeId ? (
-          // Keyed by id so that opening a different will remounts the wizard,
-          // which is what re-runs the initialisers that read it out of storage.
-          <Wizard key={activeId} id={activeId} onHome={goHome} />
-        ) : view === 'landing' ? (
-          <Landing onStart={() => setView('home')} onAccount={() => setView('account')} />
-        ) : view === 'account' ? (
-          <Account
-            account={account}
-            onLogoPress={() => setView('landing')}
-            onLogout={logout}
-            onSignedIn={async (acct) => {
-              // iOS code sign-in completes inside the Account screen; adopt the
-              // fresh session here and pull the account's synced printed orders,
-              // mirroring what the web magic-link effect does on verifyLogin.
-              setAccount(acct);
-              await syncAccountOrders();
+        // No `linking` config, by design — see navigationRef above. The stack
+        // gives every transition the native iOS push/pop and edge swipe-back;
+        // we keep each screen's own white header (headerShown: false) because
+        // the wordmark / progress bar is richer than a plain system title bar.
+        <NavigationContainer ref={navigationRef} onReady={() => setNavReady(true)}>
+          <Stack.Navigator
+            initialRouteName="Landing"
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: C.background },
             }}
-          />
-        ) : (
-          <Home
-            wills={wills}
-            printed={printed}
-            onCreate={create}
-            onOpen={open}
-            onDelete={remove}
-            onLogoPress={() => setView('landing')}
-            onAccount={() => setView('account')}
-            accountInitial={account?.email}
-          />
-        )
+          >
+            <Stack.Screen name="Landing">
+              {({ navigation }) => (
+                <Landing
+                  onStart={() => navigation.navigate('Home')}
+                  onAccount={() => navigation.navigate('Account')}
+                />
+              )}
+            </Stack.Screen>
+
+            <Stack.Screen name="Home">
+              {({ navigation }) => (
+                <Home
+                  wills={wills}
+                  printed={printed}
+                  onCreate={(isForSomeoneElse) =>
+                    navigation.navigate('Wizard', { id: createWill(isForSomeoneElse) })
+                  }
+                  onOpen={(id) => navigation.navigate('Wizard', { id })}
+                  onDelete={remove}
+                  onLogoPress={() => navigation.navigate('Landing')}
+                  onAccount={() => navigation.navigate('Account')}
+                  accountInitial={account?.email}
+                />
+              )}
+            </Stack.Screen>
+
+            <Stack.Screen name="Account">
+              {({ navigation }) => (
+                <Account
+                  account={account}
+                  onLogoPress={() => navigation.navigate('Landing')}
+                  onLogout={logout}
+                  onSignedIn={async (acct) => {
+                    // iOS code sign-in completes inside the Account screen; adopt
+                    // the fresh session here and pull the account's synced printed
+                    // orders, mirroring what the web magic-link effect does.
+                    setAccount(acct);
+                    await syncAccountOrders();
+                  }}
+                />
+              )}
+            </Stack.Screen>
+
+            {/* Swipe-back is disabled inside a will: a stray edge-swipe must not
+                silently drop someone out of a half-finished will. Leaving is the
+                explicit "‹ Wills" action, which flushes to storage first. The id
+                rides as a route param, and `key` remounts the wizard when a
+                different will is opened so its initialisers re-read storage. */}
+            <Stack.Screen name="Wizard" options={{ gestureEnabled: false }}>
+              {({ navigation, route }) => (
+                <Wizard
+                  key={route.params.id}
+                  id={route.params.id}
+                  onHome={() => {
+                    refreshLists();
+                    navigation.navigate('Home');
+                  }}
+                />
+              )}
+            </Stack.Screen>
+          </Stack.Navigator>
+        </NavigationContainer>
       ) : (
         // Same navy as the splash screen, so the handover is invisible rather
         // than a white flash between the two.

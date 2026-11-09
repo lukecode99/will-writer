@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CONTENT_MAX_WIDTH } from '../screens/shared';
+import { C, CONTENT_MAX_WIDTH } from '../screens/shared';
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -38,22 +38,22 @@ export default function ProgressHeader({
   const pct = Math.round((current / totalSteps) * 100);
 
   return (
-    // The navy runs full width and up under the status bar; the padding is
-    // measured rather than hardcoded, because the notch inset differs between
-    // an iPhone with Dynamic Island, an SE, and an iPad (which has none).
-    <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
+    // A white iOS nav bar: a back chevron on the left, the subject centred as a
+    // title, a plain Save text action on the right, with the progress bar as a
+    // thin rule under it. The padding is measured rather than hardcoded because
+    // the notch inset differs between a Dynamic Island iPhone, an SE and an iPad.
+    <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
       <View style={styles.inner}>
         <View style={styles.row}>
-          {/* Title and step stack vertically rather than sitting side by side,
-              which leaves room for the save control on the right without it
-              crowding the step name on a narrow phone. */}
           <TouchableOpacity
             style={styles.homeBtn}
             onPress={onHome}
             accessibilityRole="button"
             accessibilityLabel="Save and go back to your wills"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={styles.homeText}>‹</Text>
+            <Text style={styles.homeLabel}>Wills</Text>
           </TouchableOpacity>
 
           <View style={styles.titleBlock}>
@@ -69,16 +69,19 @@ export default function ProgressHeader({
           </View>
 
           <TouchableOpacity
-            style={[styles.saveBtn, saveState === 'error' ? styles.saveBtnError : null]}
+            style={styles.saveBtn}
             onPress={onSave}
             disabled={saveState === 'saving'}
             accessibilityRole="button"
             accessibilityLabel="Save your answers"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             {saveState === 'saving' ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+              <ActivityIndicator color={C.primary} size="small" />
             ) : (
-              <Text style={styles.saveText}>{SAVE_LABEL[saveState]}</Text>
+              <Text style={[styles.saveText, saveState === 'error' ? styles.saveTextError : null]}>
+                {SAVE_LABEL[saveState]}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
@@ -93,9 +96,11 @@ export default function ProgressHeader({
 
 const styles = StyleSheet.create({
   header: {
-    backgroundColor: '#1B3A6B',
-    paddingBottom: 12,
-    paddingHorizontal: 20,
+    backgroundColor: C.surface,
+    paddingBottom: 10,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.hairline,
   },
   // Kept in step with the form column below it, so the title and the progress
   // bar line up with the fields rather than sitting out at the screen edges.
@@ -109,67 +114,66 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
-    gap: 12,
+    gap: 8,
   },
   titleBlock: {
     flex: 1,
-  },
-  homeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    marginLeft: -4,
+  },
+  // iOS back affordance: a tint chevron with a short word label, not a filled
+  // circular button.
+  homeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 64,
   },
   homeText: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    lineHeight: 26,
-    fontWeight: '700',
+    color: C.primary,
+    fontSize: 28,
+    lineHeight: 30,
+    fontWeight: '400',
+    marginTop: -2,
+  },
+  homeLabel: {
+    color: C.primary,
+    fontSize: 16,
+    fontWeight: '400',
+    marginLeft: 1,
   },
   appTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    color: C.text,
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   stepLabel: {
-    color: 'rgba(255,255,255,0.8)',
+    color: C.textLight,
     fontSize: 12,
-    marginTop: 2,
+    marginTop: 1,
   },
   saveBtn: {
-    minWidth: 74,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.55)',
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    alignItems: 'center',
+    minWidth: 64,
+    alignItems: 'flex-end',
     justifyContent: 'center',
   },
-  saveBtnError: {
-    borderColor: '#FCA5A5',
-    backgroundColor: 'rgba(220,38,38,0.35)',
-  },
   saveText: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    color: C.primary,
+    fontSize: 16,
     fontWeight: '600',
   },
+  saveTextError: {
+    color: C.danger,
+  },
   track: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: C.hairline,
     overflow: 'hidden',
   },
   fill: {
     height: '100%',
-    borderRadius: 3,
-    backgroundColor: '#FFFFFF',
+    borderRadius: 2,
+    backgroundColor: C.primary,
     // CSS transition for web
     ...(Platform.OS === 'web' ? { transition: 'width 0.3s ease' } as any : {}),
   },

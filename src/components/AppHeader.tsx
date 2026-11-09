@@ -18,17 +18,18 @@ interface Props {
 }
 
 /**
- * The standing top bar — navy wordmark on the left, a persistent Account control
- * on the right. Shared by every top-level page (homepage, start/saved-wills,
- * account) so the way in to an account is always in the same place and never has
- * to be hunted for. Kept out of the wizard header deliberately: mid-will is a
- * focused flow, and its header is a progress bar, not navigation.
+ * The standing top bar, styled as an iOS navigation bar: a white chrome strip
+ * with a hairline bottom separator, the navy wordmark on the left, and a plain
+ * tappable Account action on the right (no bordered pill). Shared by every
+ * top-level page so the way in to an account is always in the same place.
+ * Kept out of the wizard header deliberately — mid-will its header is a
+ * progress bar, not navigation.
  */
 export default function AppHeader({ onLogoPress, onAccount, accountActive, accountInitial }: Props) {
   const insets = useSafeAreaInsets();
   const initial = accountInitial ? accountInitial.trim().charAt(0).toUpperCase() : '';
   return (
-    <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
+    <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
       <View style={styles.inner}>
         <TouchableOpacity
           style={styles.titleBlock}
@@ -40,21 +41,16 @@ export default function AppHeader({ onLogoPress, onAccount, accountActive, accou
           <Text style={styles.sub}>Wills for England and Wales</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.accountBtn, accountActive ? styles.accountBtnActive : null]}
+          style={styles.accountBtn}
           onPress={onAccount}
           accessibilityRole="button"
           accessibilityLabel={initial ? 'Your account, signed in' : 'Your account'}
           accessibilityState={{ selected: !!accountActive }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           {initial ? (
-            <View
-              style={[styles.initialDot, accountActive ? styles.initialDotActive : null]}
-            >
-              <Text
-                style={[styles.initialText, accountActive ? styles.initialTextActive : null]}
-              >
-                {initial}
-              </Text>
+            <View style={styles.initialDot}>
+              <Text style={styles.initialText}>{initial}</Text>
             </View>
           ) : null}
           <Text style={[styles.accountBtnText, accountActive ? styles.accountBtnTextActive : null]}>
@@ -68,9 +64,13 @@ export default function AppHeader({ onLogoPress, onAccount, accountActive, accou
 
 const styles = StyleSheet.create({
   header: {
-    backgroundColor: C.primary,
+    // White nav-bar chrome with a hairline under it, the way an iOS
+    // UINavigationController sits above the scrolling content.
+    backgroundColor: C.surface,
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: C.hairline,
   },
   inner: {
     width: '100%',
@@ -84,55 +84,45 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   title: {
-    color: '#FFFFFF',
+    color: C.primary,
     fontSize: 20,
     fontWeight: '700',
+    letterSpacing: 0.2,
   },
   sub: {
-    color: '#C7D6EA',
-    fontSize: 13,
-    marginTop: 2,
+    color: C.textLight,
+    fontSize: 12,
+    marginTop: 1,
   },
+  // A plain text action — the iOS bar-button convention — rather than a
+  // bordered button that reads as a web pill.
   accountBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#4A6894',
-    borderRadius: 8,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
     marginLeft: 12,
   },
-  accountBtnActive: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#FFFFFF',
-  },
   initialDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: C.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 7,
   },
-  initialDotActive: {
-    backgroundColor: C.primary,
-  },
   initialText: {
-    color: C.primary,
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
   },
-  initialTextActive: {
-    color: '#FFFFFF',
-  },
   accountBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    color: C.primary,
+    fontSize: 16,
     fontWeight: '600',
   },
   accountBtnTextActive: {
-    color: C.primary,
+    // On the account page itself the control is the current page, so it reads
+    // as inert grey rather than a live tint link.
+    color: C.textLight,
   },
 });

@@ -2,11 +2,15 @@ import { StyleSheet } from 'react-native';
 
 export const C = {
   primary: '#1B3A6B',
-  background: '#F7F9FC',
+  // iOS systemGroupedBackground / neutral separators, so screens read as native
+  // grouped lists rather than a tinted web page.
+  background: '#F2F2F7',
   surface: '#FFFFFF',
-  text: '#1A1A2E',
-  textLight: '#6B7280',
-  border: '#D1DCE8',
+  text: '#1C1C1E',
+  textLight: '#6E6E73',
+  border: '#D1D1D6',
+  // A faint hairline for grouped-row separators (iOS opaque separator).
+  hairline: '#E3E3E8',
   danger: '#DC2626',
   success: '#059669',
 };
@@ -26,33 +30,38 @@ export const shared = StyleSheet.create({
     flexGrow: 1,
   },
   heading: {
-    fontSize: 22,
+    // iOS large-title weight/size — the screen title sits big and bold at the
+    // top of the scroll, the way a UINavigationController large title does.
+    fontSize: 28,
     fontWeight: '700',
+    letterSpacing: 0.37,
     color: C.text,
     marginBottom: 4,
     marginTop: 4,
   },
   sub: {
-    fontSize: 14,
+    fontSize: 15,
     color: C.textLight,
     marginBottom: 20,
-    lineHeight: 20,
+    lineHeight: 21,
   },
   label: {
     fontSize: 13,
     fontWeight: '600',
     color: C.text,
-    marginBottom: 6,
-    marginTop: 14,
+    marginBottom: 7,
+    marginTop: 16,
   },
   input: {
     backgroundColor: C.surface,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
+    paddingVertical: 13,
+    // 17pt is the iOS body size; anything smaller reads as a web form and also
+    // makes iOS zoom the field on focus.
+    fontSize: 17,
     color: C.text,
     marginBottom: 2,
   },
@@ -70,30 +79,33 @@ export const shared = StyleSheet.create({
   },
   primaryBtn: {
     backgroundColor: C.primary,
-    borderRadius: 12,
-    paddingVertical: 15,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: 'center',
     marginTop: 24,
   },
   primaryBtnText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
+    // 17pt / semibold is the iOS prominent-button convention; the old 700 read
+    // heavier than any native control.
+    fontSize: 17,
+    fontWeight: '600',
   },
   btnDisabled: {
-    opacity: 0.45,
+    opacity: 0.4,
   },
+  // iOS "gray" (tinted) button: a soft fill with the brand tint as the label,
+  // rather than a web outline. Reads as a secondary action, not a bordered link.
   secondaryBtn: {
-    borderRadius: 12,
-    paddingVertical: 12,
+    backgroundColor: '#EAEAF0',
+    borderRadius: 14,
+    paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 8,
-    borderWidth: 1.5,
-    borderColor: C.primary,
+    marginTop: 10,
   },
   secondaryBtnText: {
     color: C.primary,
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '600',
   },
   dangerBtn: {
@@ -109,26 +121,24 @@ export const shared = StyleSheet.create({
     fontWeight: '600',
   },
   addBtn: {
-    borderRadius: 10,
-    paddingVertical: 11,
+    borderRadius: 12,
+    paddingVertical: 13,
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: C.primary,
-    borderStyle: 'dashed',
-    marginTop: 8,
+    backgroundColor: '#EAEAF0',
+    marginTop: 10,
   },
   addBtnText: {
     color: C.primary,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
   card: {
     backgroundColor: C.surface,
     borderRadius: 12,
-    padding: 14,
+    padding: 16,
     marginTop: 10,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: C.hairline,
   },
   cardHeader: {
     flexDirection: 'row',
