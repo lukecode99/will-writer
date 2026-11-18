@@ -44,8 +44,11 @@ function commonChecks({ shown, strict, draft }) {
   }
 
   // Every page numbered, and the totals agreeing — a will with a page missing
-  // should be obvious to whoever reads it.
-  const total = rendered.pages;
+  // should be obvious to whoever reads it. The branded signing guide is
+  // prepended to finished wills AFTER the footer loop, deliberately outside the
+  // numbering, so the footers count only the will's own pages.
+  const hasGuide = shown.includes('How to sign your will');
+  const total = rendered.pages - (hasGuide ? 1 : 0);
   for (let i = 1; i <= total; i++) {
     if (!shown.includes(`Page ${i} of ${total}`)) {
       out.push(`page ${i} of ${total} has no footer`);
@@ -158,7 +161,7 @@ const RAW = {
       'SURVIVORSHIP AND SUBSTITUTION',
       'ATTESTATION',
       'DATE OF SIGNING',
-      'SIGNING INSTRUCTIONS',
+      'How to sign your will',
       'WHAT CAN CHANGE OR OVERRIDE THIS WILL',
       'THIS IS A TEMPLATE DOCUMENT — NOT LEGAL ADVICE',
       '• Jane Elizabeth Smith (wife) — 50%',

@@ -553,9 +553,9 @@ async function drawSigningGuide(doc: PDFDocument): Promise<void> {
     ['Check your witnesses can act',
       'A witness — or their husband, wife or civil partner — must not be anyone who inherits under this will. If they are, they lose their gift. Neighbours, friends or colleagues who gain nothing are ideal.'],
     ['Sign and date it yourself, in front of both',
-      'Using the signature line at the end of the will, sign your normal signature and write the date while both witnesses watch. Use a single pen in blue or black ink.'],
+      'Using the signature line at the end of the will, sign your normal signature and write the date while both witnesses watch. Use a single pen in blue or black ink. If your will appoints a guardian for your children, the appointment only takes effect if the will is dated.'],
     ['Each witness signs while you watch',
-      'Straight after you — and while you are still watching — each witness signs and prints their full name and address on the same page. The simplest way to be sure is for all three of you to stay together until everyone has signed.'],
+      'Straight after you — and while you are still watching — each witness signs and prints their full name, address and occupation on the same page. The simplest way to be sure is for all three of you to stay together until everyone has signed.'],
     ['Do not change anything afterwards',
       'Do not remove the staple, add notes, cross anything out or attach documents. Any alteration after signing can invalidate the whole will.'],
     ['Store it safely and tell your executors',
@@ -1297,49 +1297,15 @@ export async function generateWillPdf(
     'Signature', 'Full name', 'Address', 'Occupation',
   ]);
 
-  // ── Signing Instructions (new page) ────────────────────────────────────────
-  ctx = newPage(ctx);
-  ctx = gap(ctx, 20);
-  ctx = drawText(ctx, 'SIGNING INSTRUCTIONS', { font: bold, size: 14, center: true });
-  ctx = gap(ctx, 4);
-  ctx = drawText(ctx, 'Please read these instructions carefully before signing your Will.', {
-    size: 11, center: true, color: GRAY,
-  });
-  ctx = gap(ctx, 16);
-
-  const instructions: [string, string][] = [
-    ['1. Arrange to sign in person',
-     'You must sign your Will in the physical presence of BOTH witnesses at the same time.'],
-    ['2. Choose your witnesses carefully',
-     'Witnesses must be adults (aged 18 or over). A witness (or the spouse or civil partner of a witness) ' +
-     'must NOT be a beneficiary under the Will — any gift to them will be void.'],
-    ['3. Do not sign early',
-     'Do not sign the Will before both witnesses are present and watching.'],
-    ['4. Witness signature',
-     'After you have signed, each witness must sign the Will in your presence and in the presence of the other witness, ' +
-     'on the same occasion. Both witnesses must write their full names, addresses and occupations.'],
-    ['5. Fill in the date',
-     'Write the date on the "DATE OF SIGNING" line on the day you sign — not before. If your Will appoints a ' +
-     'guardian for your children, the appointment must be dated to be effective (Children Act 1989, section 5(5)), ' +
-     'so leaving the date blank can undo it.'],
-    ['6. No alterations after signing',
-     'Once signed and witnessed, do not alter the Will. Any amendment must be done by a new codicil or a fresh Will.'],
-    ['7. Store safely',
-     'Keep the original Will in a safe place — a solicitor\'s safe, a bank, or the Probate Registry. ' +
-     'Tell your Executors where to find it.'],
-  ];
-
-  for (const [title, body] of instructions) {
-    ctx = drawText(ctx, title, { font: bold, size: 11 });
-    ctx = gap(ctx, 2);
-    ctx = drawText(ctx, body, { size: 11 });
-    ctx = gap(ctx, 10);
-  }
-
+  // ── What can change or override this Will (new page) ──────────────────────
+  // How-to-sign steps live ONLY on the branded front-page guide
+  // (drawSigningGuide) — stating them in a second place lets the two copies
+  // drift apart, and the printed pack read as duplicated.
   // Four things routinely undo a will that was correctly signed. None of them
   // are visible from inside the document, so they are stated here.
-  ctx = gap(ctx, 4);
-  ctx = drawText(ctx, 'WHAT CAN CHANGE OR OVERRIDE THIS WILL', { font: bold, size: 12 });
+  ctx = newPage(ctx);
+  ctx = gap(ctx, 20);
+  ctx = drawText(ctx, 'WHAT CAN CHANGE OR OVERRIDE THIS WILL', { font: bold, size: 13, center: true });
   ctx = gap(ctx, 8);
   const afterwards: [string, string][] = [
     ['Marriage or civil partnership revokes it',
