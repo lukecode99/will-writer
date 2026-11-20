@@ -44,11 +44,17 @@ function commonChecks({ shown, strict, draft }) {
   }
 
   // Every page numbered, and the totals agreeing — a will with a page missing
-  // should be obvious to whoever reads it. The branded signing guide is
-  // prepended to finished wills AFTER the footer loop, deliberately outside the
-  // numbering, so the footers count only the will's own pages.
-  const hasGuide = shown.includes('How to sign your will');
-  const total = rendered.pages - (hasGuide ? 1 : 0);
+  // should be obvious to whoever reads it. The branded guidance pages (the
+  // signing guide on the front of finished wills; the what-can-change and
+  // important-notice pages on the back of every render) are drawn AFTER the
+  // footer loop, deliberately outside the numbering, so the footers count only
+  // the will's own pages.
+  const brandedPages = [
+    'How to sign your will',
+    'What can change or override this will',
+    'Important notice',
+  ].filter(h => shown.includes(h)).length;
+  const total = rendered.pages - brandedPages;
   for (let i = 1; i <= total; i++) {
     if (!shown.includes(`Page ${i} of ${total}`)) {
       out.push(`page ${i} of ${total} has no footer`);
@@ -162,8 +168,9 @@ const RAW = {
       'ATTESTATION',
       'DATE OF SIGNING',
       'How to sign your will',
-      'WHAT CAN CHANGE OR OVERRIDE THIS WILL',
-      'THIS IS A TEMPLATE DOCUMENT — NOT LEGAL ADVICE',
+      'What can change or override this will',
+      'Important notice',
+      'This is a template document — not legal advice.',
       '• Jane Elizabeth Smith (wife) — 50%',
       '• Oliver Smith (son) — 30%',
       '• Amelia Smith (daughter) — 20%',

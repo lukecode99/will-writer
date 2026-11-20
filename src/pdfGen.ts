@@ -477,16 +477,56 @@ function familyLines(data: WillData): string[] {
 }
 
 /**
- * The branded "How to sign your will" one-pager. Inserted as page 1 (front) of
- * every completed will so it appears in both the download and the printed pack.
+ * The branded guidance pages: the "How to sign your will" front page and the
+ * what-can-change / important-notice pages at the back of the pack.
  *
- * It has its own Helvetica look and 56pt margin (distinct from the will body's
- * Times/65pt), and MUST be inserted *after* the page-furniture loop so it stays
- * out of the "Page X of Y" numbering and the DRAFT watermark. Legal wording
- * verified against Wills Act 1837 ss.9/15 + gov.uk/make-will by quality-worker
- * and Perplexity (Sep 2026); every deviation errs on the safe/stricter side.
+ * They share one renderer with a Helvetica look and 56pt margin (distinct from
+ * the will body's Times/65pt) — these pages are SortedWill guidance, not
+ * operative words of the will, and the design difference is what signals that.
+ * All of them MUST be drawn *after* the page-furniture loop so they stay out
+ * of the "Page X of Y" numbering: the will's own page count covers only the
+ * will. Legal wording verified against Wills Act 1837 ss.9/15 +
+ * gov.uk/make-will by quality-worker and Perplexity (Sep 2026); every
+ * deviation errs on the safe/stricter side.
  */
-async function drawSigningGuide(doc: PDFDocument): Promise<void> {
+/**
+ * The DRAFT watermark, centred on the page diagonal: rotating about the anchor
+ * means the text runs up and to the right, so the start point is offset back
+ * along that line. Shared between the page-furniture loop and the branded
+ * guidance pages, which are drawn after that loop has already run.
+ */
+function drawDraftWatermark(p: PDFPage, font: PDFFont): void {
+  const mark = 'DRAFT — DO NOT SIGN';
+  const markSize = 46;
+  const markWidth = font.widthOfTextAtSize(mark, markSize);
+  p.drawText(mark, {
+    x: PAGE_W / 2 - (markWidth / 2) * Math.cos(Math.PI / 4),
+    y: PAGE_H / 2 - (markWidth / 2) * Math.sin(Math.PI / 4),
+    size: markSize,
+    font,
+    color: RED,
+    opacity: 0.18,
+    rotate: degrees(45),
+  });
+}
+
+interface BrandedPageContent {
+  title: string;
+  intro: string;
+  /** Numbered items, each with a navy number circle. */
+  steps?: [string, string][];
+  /** Plain paragraphs, drawn after any steps. */
+  paragraphs?: string[];
+  /** Red-barred callout box, drawn last. */
+  callout?: { title: string; body: string };
+  footerRight: string;
+}
+
+async function drawBrandedPage(
+  doc: PDFDocument,
+  content: BrandedPageContent,
+  insertAt?: number
+): Promise<PDFPage> {
   const GW = 595.28;
   const GH = 841.89;
   const GM = 56;
@@ -500,7 +540,9 @@ async function drawSigningGuide(doc: PDFDocument): Promise<void> {
   const helv = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 
-  const page = doc.insertPage(0, [GW, GH]);
+  const page = insertAt === undefined
+    ? doc.addPage([GW, GH])
+    : doc.insertPage(insertAt, [GW, GH]);
   const W = GW - GM * 2;
   let y = GH - GM;
 
@@ -540,30 +582,12 @@ async function drawSigningGuide(doc: PDFDocument): Promise<void> {
   page.drawRectangle({ x: GM, y, width: W, height: 3, color: NAVY });
   y -= 30;
 
-  page.drawText('How to sign your will', { x: GM, y, size: 19, font: bold, color: INK });
+  page.drawText(content.title, { x: GM, y, size: 19, font: bold, color: INK });
   y -= 24;
-  para(
-    'Your will is not legally valid until you sign it correctly, in front of the right witnesses. It takes five minutes. Follow these steps exactly.',
-    { color: MUTED, size: 11, lh: 15, gap: 14 }
-  );
-
-  const steps: [string, string][] = [
-    ['Get two witnesses together',
-      'Ask two adults (18 or over, of sound mind) to witness your signature. Both must be in the room with you at the same time — not one after the other.'],
-    ['Check your witnesses can act',
-      'A witness — or their husband, wife or civil partner — must not be anyone who inherits under this will. If they are, they lose their gift. Neighbours, friends or colleagues who gain nothing are ideal.'],
-    ['Sign and date it yourself, in front of both',
-      'Using the signature line at the end of the will, sign your normal signature and write the date while both witnesses watch. Use a single pen in blue or black ink. If your will appoints a guardian for your children, the appointment only takes effect if the will is dated.'],
-    ['Each witness signs while you watch',
-      'Straight after you — and while you are still watching — each witness signs and prints their full name, address and occupation on the same page. The simplest way to be sure is for all three of you to stay together until everyone has signed.'],
-    ['Do not change anything afterwards',
-      'Do not remove the staple, add notes, cross anything out or attach documents. Any alteration after signing can invalidate the whole will.'],
-    ['Store it safely and tell your executors',
-      'Keep the signed original flat, dry and secure, and make sure your executors know where to find it. Only the signed original has legal effect — a photocopy does not.'],
-  ];
+  para(content.intro, { color: MUTED, size: 11, lh: 15, gap: 14 });
 
   const numR = 10;
-  steps.forEach(([title, body], i) => {
+  (content.steps ?? []).forEach(([title, body], i) => {
     const cx = GM + numR;
     const cy = y - numR + 2;
     page.drawCircle({ x: cx, y: cy, size: numR, color: NAVY });
@@ -576,23 +600,26 @@ async function drawSigningGuide(doc: PDFDocument): Promise<void> {
     para(body, { x: tx, maxW: tW, size: 10, lh: 13.5, gap: 10 });
   });
 
+  for (const text of content.paragraphs ?? []) {
+    para(text, { size: 10.5, lh: 14, gap: 10 });
+  }
+
   y -= 4;
 
   // Warning callout box
-  const boxTitle = 'Who cannot witness your will';
-  const boxBody =
-    'Anyone who benefits from the will, and the husband, wife or civil partner of anyone who benefits. Under-18s. Your executors can witness it, but only if they inherit nothing.';
-  const boxLines = wrap(boxBody, helv, 10, W - 28);
-  const boxH = 18 + 16 + boxLines.length * 13.5 + 12;
-  const boxTop = y;
-  page.drawRectangle({ x: GM, y: boxTop - boxH, width: W, height: boxH, color: BOXBG });
-  page.drawRectangle({ x: GM, y: boxTop - boxH, width: 4, height: boxH, color: BOXBAR });
-  let by = boxTop - 18;
-  page.drawText(boxTitle, { x: GM + 16, y: by, size: 11, font: bold, color: BOXBAR });
-  by -= 16;
-  for (const ln of boxLines) {
-    page.drawText(ln, { x: GM + 16, y: by, size: 10, font: helv, color: INK });
-    by -= 13.5;
+  if (content.callout) {
+    const boxLines = wrap(content.callout.body, helv, 10, W - 28);
+    const boxH = 18 + 16 + boxLines.length * 13.5 + 12;
+    const boxTop = y;
+    page.drawRectangle({ x: GM, y: boxTop - boxH, width: W, height: boxH, color: BOXBG });
+    page.drawRectangle({ x: GM, y: boxTop - boxH, width: 4, height: boxH, color: BOXBAR });
+    let by = boxTop - 18;
+    page.drawText(content.callout.title, { x: GM + 16, y: by, size: 11, font: bold, color: BOXBAR });
+    by -= 16;
+    for (const ln of boxLines) {
+      page.drawText(ln, { x: GM + 16, y: by, size: 10, font: helv, color: INK });
+      by -= 13.5;
+    }
   }
 
   // Footer
@@ -601,9 +628,86 @@ async function drawSigningGuide(doc: PDFDocument): Promise<void> {
     thickness: 0.75, color: HAIR,
   });
   page.drawText('SortedWill', { x: GM, y: GM + 6, size: 9, font: bold, color: NAVY });
-  const right = 'Your will follows on the next page.';
-  page.drawText(right, {
-    x: GW - GM - helv.widthOfTextAtSize(right, 9), y: GM + 6, size: 9, font: helv, color: MUTED,
+  page.drawText(content.footerRight, {
+    x: GW - GM - helv.widthOfTextAtSize(content.footerRight, 9), y: GM + 6, size: 9, font: helv, color: MUTED,
+  });
+  return page;
+}
+
+/**
+ * The "How to sign your will" one-pager — the front page of every finished
+ * will, so it leads both the download and the printed pack. The ONLY place the
+ * signing steps appear: stating them twice lets the copies drift apart, and
+ * the printed pack read as duplicated.
+ */
+async function drawSigningGuide(doc: PDFDocument): Promise<void> {
+  await drawBrandedPage(doc, {
+    title: 'How to sign your will',
+    intro: 'Your will is not legally valid until you sign it correctly, in front of the right witnesses. It takes five minutes. Follow these steps exactly.',
+    steps: [
+      ['Get two witnesses together',
+        'Ask two adults (18 or over, of sound mind) to witness your signature. Both must be in the room with you at the same time — not one after the other.'],
+      ['Check your witnesses can act',
+        'A witness — or their husband, wife or civil partner — must not be anyone who inherits under this will. If they are, they lose their gift. Neighbours, friends or colleagues who gain nothing are ideal.'],
+      ['Sign and date it yourself, in front of both',
+        'Using the signature line at the end of the will, sign your normal signature and write the date while both witnesses watch. Use a single pen in blue or black ink. If your will appoints a guardian for your children, the appointment only takes effect if the will is dated.'],
+      ['Each witness signs while you watch',
+        'Straight after you — and while you are still watching — each witness signs and prints their full name, address and occupation on the same page. The simplest way to be sure is for all three of you to stay together until everyone has signed.'],
+      ['Do not change anything afterwards',
+        'Do not remove the staple, add notes, cross anything out or attach documents. Any alteration after signing can invalidate the whole will.'],
+      ['Store it safely and tell your executors',
+        'Keep the signed original flat, dry and secure, and make sure your executors know where to find it. Only the signed original has legal effect — a photocopy does not.'],
+    ],
+    callout: {
+      title: 'Who cannot witness your will',
+      body: 'Anyone who benefits from the will, and the husband, wife or civil partner of anyone who benefits. Under-18s. Your executors can witness it, but only if they inherit nothing.',
+    },
+    footerRight: 'Your will follows on the next page.',
+  }, 0);
+}
+
+/**
+ * Four things routinely undo or override a will that was correctly signed.
+ * None of them are visible from inside the document, so they are stated here —
+ * at the back of the pack, on every render including drafts.
+ */
+async function drawChangesPage(doc: PDFDocument): Promise<PDFPage> {
+  return drawBrandedPage(doc, {
+    title: 'What can change or override this will',
+    intro: 'Signing correctly is not the end of the story. Four things routinely change or override a signed will — and none of them are visible from inside the document.',
+    steps: [
+      ['Marriage or civil partnership revokes it',
+        'Getting married or entering a civil partnership automatically revokes your will (Wills Act 1837, section 18) unless it was made in express expectation of that marriage. Make a new will after you marry.'],
+      ['Divorce or dissolution changes it',
+        'If your marriage or civil partnership ends, your former spouse or civil partner is treated as having died before you (Wills Act 1837, section 18A). Any gift to them and any appointment of them as executor fails, which can leave part of your estate undisposed of.'],
+      ['Jointly owned property may pass outside this will',
+        'Property you own as beneficial joint tenants — commonly a home or a joint bank account — passes automatically to the surviving owner by survivorship, whatever this will says. If you want your share to pass under your will, the joint tenancy must be severed first.'],
+      ['Certain people can claim against your estate',
+        'A spouse, civil partner, former spouse, cohabitee of at least two years, child, or someone you were maintaining can apply to the court for provision from your estate under the Inheritance (Provision for Family and Dependants) Act 1975, normally within six months of the grant of probate. Leaving someone out does not always end the matter.'],
+    ],
+    footerRight: 'Keep this guidance with your will.',
+  });
+}
+
+/**
+ * The template-tool disclaimer — the last page of every render, drafts
+ * included: the not-legal-advice notice has to reach everything the app
+ * hands over.
+ */
+async function drawNoticePage(doc: PDFDocument): Promise<PDFPage> {
+  return drawBrandedPage(doc, {
+    title: 'Important notice',
+    intro: 'This is a template document — not legal advice.',
+    paragraphs: [
+      'This document was generated by SortedWill, a self-service template tool. It does not constitute legal advice and no solicitor-client relationship is created by its use.',
+      'For peace of mind and certainty, we strongly recommend that this document is reviewed by a qualified solicitor before signing.',
+      'SortedWill, its operators and affiliates accept no liability for any loss arising from reliance on this document.',
+    ],
+    callout: {
+      title: 'When a template may not be suitable',
+      body: 'SortedWill templates are designed for straightforward England & Wales estates. They may not be suitable if you: own property abroad; have a business interest; have children from a previous relationship; have an estate that may be liable to Inheritance Tax; have concerns about a beneficiary\'s ability to manage money; or have complex family circumstances.',
+    },
+    footerRight: 'Keep these pages with your will.',
   });
 }
 
@@ -1297,61 +1401,6 @@ export async function generateWillPdf(
     'Signature', 'Full name', 'Address', 'Occupation',
   ]);
 
-  // ── What can change or override this Will (new page) ──────────────────────
-  // How-to-sign steps live ONLY on the branded front-page guide
-  // (drawSigningGuide) — stating them in a second place lets the two copies
-  // drift apart, and the printed pack read as duplicated.
-  // Four things routinely undo a will that was correctly signed. None of them
-  // are visible from inside the document, so they are stated here.
-  ctx = newPage(ctx);
-  ctx = gap(ctx, 20);
-  ctx = drawText(ctx, 'WHAT CAN CHANGE OR OVERRIDE THIS WILL', { font: bold, size: 13, center: true });
-  ctx = gap(ctx, 8);
-  const afterwards: [string, string][] = [
-    ['Marriage or civil partnership revokes it',
-     'Getting married or entering a civil partnership automatically revokes your Will (Wills Act 1837, section 18) ' +
-     'unless it was made in express expectation of that marriage. Make a new Will after you marry.'],
-    ['Divorce or dissolution changes it',
-     'If your marriage or civil partnership ends, your former spouse or civil partner is treated as having died ' +
-     'before you (Wills Act 1837, section 18A). Any gift to them and any appointment of them as executor fails, ' +
-     'which can leave part of your estate undisposed of.'],
-    ['Jointly owned property may pass outside this Will',
-     'Property you own as beneficial joint tenants — commonly a home or a joint bank account — passes automatically ' +
-     'to the surviving owner by survivorship, whatever this Will says. If you want your share to pass under your ' +
-     'Will, the joint tenancy must be severed first.'],
-    ['Certain people can claim against your estate',
-     'A spouse, civil partner, former spouse, cohabitee of at least two years, child, or someone you were ' +
-     'maintaining can apply to the court for provision from your estate under the Inheritance (Provision for ' +
-     'Family and Dependants) Act 1975, normally within six months of the grant of probate. Leaving someone out ' +
-     'does not always end the matter.'],
-  ];
-  for (const [title, body] of afterwards) {
-    ctx = drawText(ctx, title, { font: bold, size: 11 });
-    ctx = gap(ctx, 2);
-    ctx = drawText(ctx, body, { size: 11 });
-    ctx = gap(ctx, 10);
-  }
-
-  // ── Disclaimer (new page) ──────────────────────────────────────────────────
-  ctx = newPage(ctx);
-  ctx = gap(ctx, 20);
-  ctx = drawText(ctx, 'IMPORTANT NOTICE', { font: bold, size: 13, center: true });
-  ctx = gap(ctx, 4);
-  ctx = drawText(ctx, 'THIS IS A TEMPLATE DOCUMENT — NOT LEGAL ADVICE', {
-    font: bold, size: 11, center: true, color: RED,
-  });
-  ctx = gap(ctx, 14);
-  const disclaimers = [
-    'This document was generated by SortedWill, a self-service template tool. It does not constitute legal advice and no solicitor-client relationship is created by its use.',
-    'SortedWill templates are designed for straightforward England & Wales estates. They may NOT be suitable if you: own property abroad; have a business interest; have children from a previous relationship; have an estate that may be liable to Inheritance Tax; have concerns about a beneficiary\'s ability to manage money; or have complex family circumstances.',
-    'For peace of mind and certainty, we strongly recommend that this document is reviewed by a qualified solicitor before signing.',
-    'SortedWill, its operators and affiliates accept no liability for any loss arising from reliance on this document.',
-  ];
-  for (const d of disclaimers) {
-    ctx = drawText(ctx, d, { size: 10 });
-    ctx = gap(ctx, 8);
-  }
-
   // ── Page furniture ─────────────────────────────────────────────────────────
   // Numbered pages naming the testator make a substituted or missing page
   // obvious; the draft watermark has to go on every page, including ones that
@@ -1360,20 +1409,7 @@ export async function generateWillPdf(
   const footerName = sanitizeForPdf(data.fullName).trim();
   pages.forEach((p, index) => {
     if (isDraft) {
-      const mark = 'DRAFT — DO NOT SIGN';
-      const markSize = 46;
-      const markWidth = bold.widthOfTextAtSize(mark, markSize);
-      // Centred on the diagonal: rotating about the anchor means the text runs
-      // up and to the right, so the start point is offset back along that line.
-      p.drawText(mark, {
-        x: PAGE_W / 2 - (markWidth / 2) * Math.cos(Math.PI / 4),
-        y: PAGE_H / 2 - (markWidth / 2) * Math.sin(Math.PI / 4),
-        size: markSize,
-        font: bold,
-        color: RED,
-        opacity: 0.18,
-        rotate: degrees(45),
-      });
+      drawDraftWatermark(p, bold);
     }
     const footer = `${footerName ? footerName + ' — ' : ''}Last Will and Testament — Page ${index + 1} of ${pages.length}`;
     // Clamped: a very long name makes the centring arithmetic go negative and
@@ -1387,11 +1423,20 @@ export async function generateWillPdf(
     });
   });
 
-  // The signing guide goes on the front of the finished will only — a draft is
-  // a preview that must not be signed, so it stays out of the numbering loop
-  // above and is prepended last, after the will's own pages are numbered.
+  // The branded guidance pack sits outside the numbering loop above, so it is
+  // drawn after the will's own pages are numbered. The signing guide fronts
+  // the finished will only — a draft is a preview that must not be signed —
+  // while the what-can-change and important-notice pages close every render:
+  // drafts have to carry the disclaimer too, and they get the watermark the
+  // furniture loop could not reach.
   if (!isDraft) {
     await drawSigningGuide(doc);
+  }
+  const changesPage = await drawChangesPage(doc);
+  const noticePage = await drawNoticePage(doc);
+  if (isDraft) {
+    drawDraftWatermark(changesPage, bold);
+    drawDraftWatermark(noticePage, bold);
   }
 
   return doc.save();
