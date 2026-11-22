@@ -45,14 +45,14 @@ function commonChecks({ shown, strict, draft }) {
 
   // Every page numbered, and the totals agreeing — a will with a page missing
   // should be obvious to whoever reads it. The branded guidance pages (the
-  // signing guide on the front of finished wills; the what-can-change and
-  // important-notice pages on the back of every render) are drawn AFTER the
-  // footer loop, deliberately outside the numbering, so the footers count only
-  // the will's own pages.
+  // signing guide on the front of finished wills; the combined what-can-change
+  // / about-this-document page on the back of every render) are drawn AFTER
+  // the footer loop, deliberately outside the numbering, so the footers count
+  // only the will's own pages. 'About this document' shares the back page, so
+  // it is not counted here.
   const brandedPages = [
     'How to sign your will',
     'What can change or override this will',
-    'About this document',
   ].filter(h => shown.includes(h)).length;
   const total = rendered.pages - brandedPages;
   for (let i = 1; i <= total; i++) {

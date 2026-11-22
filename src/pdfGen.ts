@@ -517,6 +517,8 @@ interface BrandedPageContent {
   steps?: [string, string][];
   /** Plain paragraphs, drawn after any steps. */
   paragraphs?: string[];
+  /** A second titled block on the same page, separated by a hairline. */
+  section?: { title: string; paragraphs: string[] };
   /** Red-barred callout box, drawn last. */
   callout?: { title: string; body: string };
   footerRight: string;
@@ -604,6 +606,20 @@ async function drawBrandedPage(
     para(text, { size: 10.5, lh: 14, gap: 10 });
   }
 
+  if (content.section) {
+    y -= 6;
+    page.drawLine({
+      start: { x: GM, y }, end: { x: GW - GM, y },
+      thickness: 0.75, color: HAIR,
+    });
+    y -= 26;
+    page.drawText(content.section.title, { x: GM, y, size: 14, font: bold, color: INK });
+    y -= 20;
+    for (const text of content.section.paragraphs) {
+      para(text, { size: 10, lh: 13, gap: 8 });
+    }
+  }
+
   y -= 4;
 
   // Warning callout box
@@ -667,11 +683,12 @@ async function drawSigningGuide(doc: PDFDocument): Promise<void> {
 }
 
 /**
- * Four things routinely undo or override a will that was correctly signed.
- * None of them are visible from inside the document, so they are stated here —
- * at the back of the pack, on every render including drafts.
+ * The single back page of every render, drafts included: the four things that
+ * routinely undo or override a correctly signed will (none visible from inside
+ * the document), with the template-tool disclaimer below — the not-legal-advice
+ * notice has to reach everything the app hands over.
  */
-async function drawChangesPage(doc: PDFDocument): Promise<PDFPage> {
+async function drawBackPage(doc: PDFDocument): Promise<PDFPage> {
   return drawBrandedPage(doc, {
     title: 'What can change or override this will',
     intro: 'Signing correctly is not the end of the story. Four things routinely change or override a signed will — and none of them are visible from inside the document.',
@@ -679,35 +696,25 @@ async function drawChangesPage(doc: PDFDocument): Promise<PDFPage> {
       ['Marriage or civil partnership revokes it',
         'Getting married or entering a civil partnership automatically revokes your will (Wills Act 1837, section 18) unless it was made in express expectation of that marriage. Make a new will after you marry.'],
       ['Divorce or dissolution changes it',
-        'If your marriage or civil partnership ends, your former spouse or civil partner is treated as having died before you (Wills Act 1837, section 18A). Any gift to them and any appointment of them as executor fails, which can leave part of your estate undisposed of.'],
+        'If your marriage or civil partnership ends, your former spouse or civil partner is treated as having died before you (section 18A): any gift to them and any appointment of them as executor fails, which can leave part of your estate undisposed of.'],
       ['Jointly owned property may pass outside this will',
-        'Property you own as beneficial joint tenants — commonly a home or a joint bank account — passes automatically to the surviving owner by survivorship, whatever this will says. If you want your share to pass under your will, the joint tenancy must be severed first.'],
+        'Property owned as beneficial joint tenants — commonly a home or a joint bank account — passes automatically to the surviving owner by survivorship, whatever this will says. If you want your share to pass under your will, the joint tenancy must be severed first.'],
       ['Certain people can claim against your estate',
-        'A spouse, civil partner, former spouse, cohabitee of at least two years, child, or someone you were maintaining can apply to the court for provision from your estate under the Inheritance (Provision for Family and Dependants) Act 1975, normally within six months of the grant of probate. Leaving someone out does not always end the matter.'],
+        'A spouse, civil partner, former spouse or civil partner, cohabitee of at least two years, child, or someone you were maintaining can apply for provision from your estate under the Inheritance (Provision for Family and Dependants) Act 1975, normally within six months of the grant of probate. Leaving someone out does not always end the matter.'],
     ],
-    footerRight: 'Keep this guidance with your will.',
-  });
-}
-
-/**
- * The template-tool disclaimer — the last page of every render, drafts
- * included: the not-legal-advice notice has to reach everything the app
- * hands over.
- */
-async function drawNoticePage(doc: PDFDocument): Promise<PDFPage> {
-  return drawBrandedPage(doc, {
-    title: 'About this document',
-    intro: 'SortedWill is a self-service template tool, not a law firm.',
-    paragraphs: [
-      'This document is not legal advice, and using it does not create a solicitor-client relationship.',
-      'Template wills work well for straightforward estates. If your circumstances are more complex, an independent legal review is a sensible extra step — the situations to look out for are listed below.',
-      'SortedWill, its operators and affiliates accept no liability for any loss arising from reliance on this document.',
-    ],
+    section: {
+      title: 'About this document',
+      paragraphs: [
+        'SortedWill is a self-service template tool, not a law firm. This document is not legal advice, and using it does not create a solicitor-client relationship.',
+        'Template wills work well for straightforward estates. If your circumstances are more complex, an independent legal review is a sensible extra step — the situations to look out for are listed below.',
+        'SortedWill, its operators and affiliates accept no liability for any loss arising from reliance on this document.',
+      ],
+    },
     callout: {
       title: 'When a template may not be suitable',
       body: 'SortedWill templates are designed for straightforward England & Wales estates. They may not be suitable if you: own property abroad; have a business interest; have children from a previous relationship; have an estate that may be liable to Inheritance Tax; have concerns about a beneficiary\'s ability to manage money; or have complex family circumstances.',
     },
-    footerRight: 'Keep these pages with your will.',
+    footerRight: 'Keep this page with your will.',
   });
 }
 
@@ -1426,17 +1433,15 @@ export async function generateWillPdf(
   // The branded guidance pack sits outside the numbering loop above, so it is
   // drawn after the will's own pages are numbered. The signing guide fronts
   // the finished will only — a draft is a preview that must not be signed —
-  // while the what-can-change and important-notice pages close every render:
-  // drafts have to carry the disclaimer too, and they get the watermark the
-  // furniture loop could not reach.
+  // while the combined what-can-change / about-this-document page closes every
+  // render: drafts have to carry the disclaimer too, and they get the
+  // watermark the furniture loop could not reach.
   if (!isDraft) {
     await drawSigningGuide(doc);
   }
-  const changesPage = await drawChangesPage(doc);
-  const noticePage = await drawNoticePage(doc);
+  const backPage = await drawBackPage(doc);
   if (isDraft) {
-    drawDraftWatermark(changesPage, bold);
-    drawDraftWatermark(noticePage, bold);
+    drawDraftWatermark(backPage, bold);
   }
 
   return doc.save();
