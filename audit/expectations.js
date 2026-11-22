@@ -52,7 +52,7 @@ function commonChecks({ shown, strict, draft }) {
   const brandedPages = [
     'How to sign your will',
     'What can change or override this will',
-    'Important notice',
+    'About this document',
   ].filter(h => shown.includes(h)).length;
   const total = rendered.pages - brandedPages;
   for (let i = 1; i <= total; i++) {
@@ -169,8 +169,8 @@ const RAW = {
       'DATE OF SIGNING',
       'How to sign your will',
       'What can change or override this will',
-      'Important notice',
-      'This is a template document — not legal advice.',
+      'About this document',
+      'SortedWill is a self-service template tool, not a law firm.',
       '• Jane Elizabeth Smith (wife) — 50%',
       '• Oliver Smith (son) — 30%',
       '• Amelia Smith (daughter) — 20%',
