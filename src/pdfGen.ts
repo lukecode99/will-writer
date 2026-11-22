@@ -612,9 +612,9 @@ async function drawBrandedPage(
       start: { x: GM, y }, end: { x: GW - GM, y },
       thickness: 0.75, color: HAIR,
     });
-    y -= 26;
-    page.drawText(content.section.title, { x: GM, y, size: 14, font: bold, color: INK });
-    y -= 20;
+    y -= 30;
+    page.drawText(content.section.title, { x: GM, y, size: 19, font: bold, color: INK });
+    y -= 24;
     for (const text of content.section.paragraphs) {
       para(text, { size: 10, lh: 13, gap: 8 });
     }
